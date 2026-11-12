@@ -40,22 +40,33 @@ class Cronometro:
         return round(time.perf_counter() - self.inicio, 2)
 
 
-def describir_hardware():
-    """Arma un texto tipo 'arm64, 10 núcleos, 16 GB RAM, sin GPU dedicada'."""
-    partes = [platform.machine(), f"{os.cpu_count()} núcleos"]
+def _sysctl(clave):
+    """Lee un dato del sistema en Mac (en Linux no existe y devuelve None)."""
     try:
-        # En Mac, sysctl devuelve la memoria total en bytes
-        bytes_ram = int(subprocess.run(["sysctl", "-n", "hw.memsize"],
-                                       capture_output=True, text=True, timeout=5).stdout)
-        partes.append(f"{bytes_ram // 2**30} GB RAM")
+        return subprocess.run(["sysctl", "-n", clave], capture_output=True, text=True, timeout=5).stdout.strip()
     except Exception:
-        pass  # si no se puede averiguar (ej: Linux), lo omitimos
-    partes.append("sin GPU dedicada")
-    return ", ".join(partes)
+        return None
+
+
+def describir_hardware(dispositivo_embeddings=None):
+    """Arma un texto tipo 'Apple M5, 10 núcleos, 16 GB RAM; embeddings en GPU integrada (mps)'."""
+    partes = [_sysctl("machdep.cpu.brand_string") or platform.processor() or platform.machine(),
+              f"{os.cpu_count()} núcleos"]
+    memoria = _sysctl("hw.memsize")
+    if memoria and memoria.isdigit():
+        partes.append(f"{int(memoria) // 2**30} GB RAM")
+    texto = ", ".join(partes)
+    if dispositivo_embeddings == "mps":
+        texto += "; embeddings en la GPU integrada de la Mac (MPS)"
+    elif dispositivo_embeddings == "cuda":
+        texto += "; embeddings en GPU (CUDA)"
+    elif dispositivo_embeddings == "cpu":
+        texto += "; todo en CPU, sin GPU"
+    return texto
 
 
 def escribir_costo(carpeta_entrega: Path, crono: Cronometro, comentarios_procesados: int,
-                   almacenamiento: str, notas: str):
+                   almacenamiento: str, notas: str, dispositivo_embeddings=None):
     """Escribe entrega/costo.json con el formato que pide el desafío."""
     segundos = crono.total_segundos()
     miles = max(comentarios_procesados, 1) / 1000
@@ -65,7 +76,7 @@ def escribir_costo(carpeta_entrega: Path, crono: Cronometro, comentarios_procesa
         "tokens_ia": crono.tokens_ia,
         "usd_ia": round(crono.usd_ia, 6),
         "usd_por_mil_comentarios": round(crono.usd_ia / miles, 6),
-        "hardware": describir_hardware(),
+        "hardware": describir_hardware(dispositivo_embeddings),
         "almacenamiento": almacenamiento,
         "notas": notas,
         # Extra (no lo pide el formato, pero ayuda al jurado a ver dónde se va el tiempo)

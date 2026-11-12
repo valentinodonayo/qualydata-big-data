@@ -10,6 +10,7 @@ del tema (largo, parecido con la narrativa más cercana, margen, si es pregunta)
 Antes de guardar, se valida "por tema": se entrena con 2 temas y se prueba con el
 tercero, que el modelo nunca vio. Si eso anda bien, es buena señal para el final.
 """
+import argparse
 import json
 import logging
 from pathlib import Path
@@ -22,10 +23,15 @@ from sklearn.metrics import f1_score
 from pipeline import datos, embeddings, narrativas
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
-DATOS, CACHE, SALIDA = Path("datos/practica"), Path("cache"), Path("modelos/ruido.json")
 
 
 def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--datos", type=Path, default=Path("datos/practica"), help="Set con carpeta verdad/")
+    ap.add_argument("--salida", type=Path, default=Path("modelos/ruido.json"))
+    ap.add_argument("--cache", type=Path, default=Path("cache"))
+    args = ap.parse_args()
+    DATOS, CACHE, SALIDA = args.datos, args.cache, args.salida
     d = datos.cargar(DATOS, CACHE)
     com = d["comentarios"]
     emb, indice = embeddings.calcular(com["texto"].tolist(), CACHE)
@@ -47,6 +53,8 @@ def main():
         tema_de[k] = reales.str[0].value_counts().index[0] if len(reales) else "?"
     tema = np.array([tema_de[k] for k in cercana])
     for t in sorted(set(tema) - {"?"}):
+        if len(set(tema) - {"?"}) < 2:
+            break   # con un solo tema no hay contra qué validar
         modelo = LogisticRegression(max_iter=1000).fit(X[tema != t], y[tema != t])
         print(f"  entrenado SIN el tema {t} -> F1 de ruido en el tema {t}: "
               f"{f1_score(y[tema == t], modelo.predict(X[tema == t])):.3f}")

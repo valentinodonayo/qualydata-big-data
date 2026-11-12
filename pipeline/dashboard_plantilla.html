@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Narrativas y coordinación</title>
+<!-- Plantilla del dashboard. pipeline/dashboard.py reemplaza __DATOS__ por el JSON de la corrida. -->
+<style>
+:root {
+  color-scheme: light;
+  --pagina: #f9f9f7; --superficie: #fcfcfb; --borde: rgba(11,11,11,0.10);
+  --tinta: #0b0b0b; --tinta-2: #52514e; --tinta-3: #898781;
+  --grilla: #e1e0d9; --base: #c3c2b7;
+  --apoya: #2a78d6; --rechaza: #e34948; --barra: #2a78d6; --barra-hover: #1c5cab;
+  --op1: #2a78d6; --op2: #eb6834; --op3: #1baf7a; --op4: #eda100; --op5: #e87ba4; --op6: #008300;
+  --otras: #898781; --chip: #f0efec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --pagina: #0d0d0d; --superficie: #1a1a19; --borde: rgba(255,255,255,0.10);
+    --tinta: #f0efec; --tinta-2: #c3c2b7; --tinta-3: #898781;
+    --grilla: #2c2c2a; --base: #383835;
+    --apoya: #3987e5; --rechaza: #e66767; --barra: #3987e5; --barra-hover: #86b6ef;
+    --op1: #3987e5; --op2: #d95926; --op3: #199e70; --op4: #c98500; --op5: #d55181; --op6: #008300;
+    --chip: #2c2c2a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --pagina: #0d0d0d; --superficie: #1a1a19; --borde: rgba(255,255,255,0.10);
+  --tinta: #f0efec; --tinta-2: #c3c2b7; --tinta-3: #898781;
+  --grilla: #2c2c2a; --base: #383835;
+  --apoya: #3987e5; --rechaza: #e66767; --barra: #3987e5; --barra-hover: #86b6ef;
+  --op1: #3987e5; --op2: #d95926; --op3: #199e70; --op4: #c98500; --op5: #d55181; --op6: #008300;
+  --chip: #2c2c2a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--pagina); color: var(--tinta);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 28px; line-height: 1.15; margin: 0 0 6px; letter-spacing: -0.01em; }
+h2 { font-size: 19px; margin: 0 0 4px; }
+.sub { color: var(--tinta-2); margin: 0 0 24px; }
+.ayuda { color: var(--tinta-2); margin: 0 0 16px; font-size: 14px; max-width: 72ch; }
+section { margin-top: 40px; }
+.tarjeta { background: var(--superficie); border: 1px solid var(--borde); border-radius: 12px; }
+
+/* Números de arriba */
+.numeros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.numero { padding: 16px 18px; }
+.numero b { display: block; font-size: 30px; line-height: 1.1; font-weight: 650; }
+.numero span { color: var(--tinta-2); font-size: 13px; }
+
+/* Narrativas */
+.fila { display: grid; grid-template-columns: minmax(0, 2.3fr) 104px minmax(0, 1.6fr) minmax(0, 1.1fr) 112px;
+  gap: 16px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--grilla); }
+.fila:first-child { border-top: 0; }
+.encabezado { color: var(--tinta-3); font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+  padding-top: 12px; padding-bottom: 10px; }
+.titulo { font-weight: 600; }
+.etiqueta { color: var(--tinta-3); font-size: 12px; font-variant-numeric: tabular-nums; margin-right: 6px; }
+.frases { color: var(--tinta-2); font-size: 13px; margin-top: 2px; }
+.nueva { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--tinta-2); color: var(--tinta); margin-left: 6px; vertical-align: 1px; }
+.desde { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--tinta-2); }
+.desde b { color: var(--tinta); font-weight: 600; display: block; font-size: 14px; }
+svg { display: block; overflow: visible; }
+.postura-num { display: flex; justify-content: space-between; font-size: 12px; color: var(--tinta-2);
+  margin-top: 4px; font-variant-numeric: tabular-nums; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 8px;
+  border-radius: 999px; background: var(--chip); margin: 2px 4px 2px 0; white-space: nowrap; }
+.punto { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.genuina { color: var(--tinta-3); font-size: 13px; }
+.etiqueta-movil { display: none; }
+
+/* Operaciones */
+.ops { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.red { padding: 12px; }
+.lista-ops { display: grid; gap: 12px; }
+.op { padding: 14px 16px; }
+.op h3 { margin: 0 0 6px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.op dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; font-size: 13px; }
+.op dt { color: var(--tinta-3); }
+.op dd { margin: 0; }
+.op blockquote { margin: 10px 0 0; padding: 8px 10px; border-left: 2px solid var(--base);
+  color: var(--tinta-2); font-size: 13px; font-style: italic; }
+.leyenda { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--tinta-2); margin: 4px 4px 8px; }
+
+footer { margin-top: 40px; color: var(--tinta-3); font-size: 13px; }
+
+/* Tooltip */
+#tip { position: fixed; pointer-events: none; background: var(--superficie); color: var(--tinta);
+  border: 1px solid var(--borde); border-radius: 8px; padding: 6px 10px; font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); opacity: 0; transition: opacity .08s; z-index: 10; max-width: 280px; }
+#tip b { font-size: 15px; }
+#tip .t2 { color: var(--tinta-2); }
+.hit { fill: transparent; cursor: default; }
+.hit:hover + .barra, .barra.activa { fill: var(--barra-hover); }
+:focus-visible { outline: 2px solid var(--apoya); outline-offset: 2px; }
+
+@media (max-width: 860px) {
+  .numeros { grid-template-columns: repeat(2, 1fr); }
+  .ops { grid-template-columns: 1fr; }
+  .fila { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  .fila > :first-child { grid-column: 1 / -1; }
+  .encabezado { display: none; }
+  .etiqueta-movil { display: block; color: var(--tinta-3); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 2px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="titulo">Qué circula y quién lo empuja</h1>
+  <p class="sub" id="periodo"></p>
+  <div class="numeros" id="numeros"></div>
+
+  <section>
+    <h2>Narrativas: qué circula y desde cuándo</h2>
+    <p class="ayuda">Cada fila es una afirmación que se repite con distintas palabras. Las barras muestran los
+      comentarios por día (misma escala en todas las filas) y la línea vertical marca cuándo nació.
+      "Nace después" indica una narrativa que apareció a mitad del período.</p>
+    <div class="tarjeta" id="narrativas"></div>
+  </section>
+
+  <section>
+    <h2>Operaciones coordinadas: quién lo empuja</h2>
+    <p class="ayuda">Cada punto es una cuenta marcada como coordinada. Dos cuentas se unen con una línea si
+      comentaron la misma publicación a menos de 30 minutos, o se respondieron, al menos dos veces.
+      El resto de las cuentas se considera opinión genuina.</p>
+    <div class="ops">
+      <div class="tarjeta red"><div class="leyenda" id="leyenda"></div><div id="red"></div></div>
+      <div class="lista-ops" id="lista-ops"></div>
+    </div>
+  </section>
+
+  <footer id="pie"></footer>
+</main>
+<div id="tip" role="tooltip"></div>
+
+<script id="datos" type="application/json">__DATOS__</script>
+<script>
+(function () {
+  "use strict";
+  const D = JSON.parse(document.getElementById("datos").textContent);
+  const NS = "http://www.w3.org/2000/svg";
+  const fmt = new Intl.NumberFormat("es-AR");
+  const COLORES_OP = ["var(--op1)", "var(--op2)", "var(--op3)", "var(--op4)", "var(--op5)", "var(--op6)"];
+  const ordenOps = D.operaciones.map(o => o.op);
+  // El color sigue a la operación (por su orden fijo), nunca a su posición en una lista filtrada
+  const colorOp = op => { const i = ordenOps.indexOf(op); return i >= 0 && i < COLORES_OP.length ? COLORES_OP[i] : "var(--otras)"; };
+  const narrPorId = Object.fromEntries(D.narrativas.map(n => [n.narrativa, n]));
+
+  // Helpers para crear elementos sin usar innerHTML (el texto de los datos va siempre como texto)
+  function el(tag, attrs, ...hijos) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v; else e.setAttribute(k, v);
+    }
+    for (const h of hijos) if (h != null) e.append(h.nodeType ? h : document.createTextNode(String(h)));
+    return e;
+  }
+  function svg(tag, attrs) {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+    return e;
+  }
+  function fecha(iso, conHora) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    const op = { day: "2-digit", month: "2-digit", timeZone: "America/Argentina/Buenos_Aires" };
+    if (conHora) Object.assign(op, { hour: "2-digit", minute: "2-digit", hour12: false });
+    return d.toLocaleString("es-AR", op);
+  }
+  const diaCorto = s => s.slice(8, 10) + "/" + s.slice(5, 7);
+
+  // Tooltip: valor primero (fuerte), etiqueta después
+  const tip = document.getElementById("tip");
+  function mostrar(ev, valor, detalle) {
+    tip.replaceChildren(el("b", {}, valor), el("div", { class: "t2" }, detalle));
+    const r = ev.target.getBoundingClientRect ? ev.target.getBoundingClientRect() : null;
+    const x = ev.clientX || (r ? r.left + r.width / 2 : 0), y = ev.clientY || (r ? r.top : 0);
+    tip.style.left = Math.min(x + 12, window.innerWidth - 290) + "px";
+    tip.style.top = (y + 14) + "px";
+    tip.style.opacity = 1;
+  }
+  const ocultar = () => { tip.style.opacity = 0; };
+  function conTooltip(nodo, valor, detalle) {
+    nodo.setAttribute("tabindex", "0");
+    nodo.setAttribute("aria-label", valor + ", " + detalle);
+    nodo.addEventListener("pointermove", ev => mostrar(ev, valor, detalle));
+    nodo.addEventListener("focus", ev => mostrar(ev, valor, detalle));
+    nodo.addEventListener("pointerleave", ocultar);
+    nodo.addEventListener("blur", ocultar);
+  }
+
+  // --- Encabezado y números ---------------------------------------------------------
+  const dias = D.dias;
+  document.getElementById("periodo").textContent =
+    `Set ${D.set} · ${dias.length} días, del ${diaCorto(dias[0])} al ${diaCorto(dias[dias.length - 1])} · ` +
+    `${fmt.format(D.comentarios)} comentarios de ${fmt.format(D.cuentas_total)} cuentas`;
+  const emergentes = D.narrativas.filter(n => n.emergente).length;
+  const numeros = [
+    [D.narrativas.length, `narrativas detectadas (${emergentes} nacen a mitad del período)`],
+    [fmt.format(D.comentarios - Math.round(D.comentarios * D.ruido_pct / 100)), "comentarios dentro de una narrativa"],
+    [D.ruido_pct.toLocaleString("es-AR") + "%", "ruido: reacciones, menciones y fuera de tema"],
+    [D.cuentas_coordinadas, `cuentas coordinadas en ${D.operaciones.length} operaciones`],
+  ];
+  document.getElementById("numeros").append(...numeros.map(([v, t]) =>
+    el("div", { class: "tarjeta numero" }, el("b", {}, v), el("span", {}, t))));
+
+  // --- Narrativas ------------------------------------------------------------------
+  const cont = document.getElementById("narrativas");
+  cont.append(el("div", { class: "fila encabezado" }, el("div", {}, "Narrativa"), el("div", {}, "Desde"),
+    el("div", {}, "Comentarios por día"), el("div", {}, "Apoya · rechaza"), el("div", {}, "Empujada por")));
+  const maxDia = Math.max(1, ...D.narrativas.flatMap(n => n.por_dia));
+  const t0 = new Date(dias[0] + "T00:00:00-03:00").getTime();
+
+  function sparkline(n) {
+    const W = 260, H = 44, gap = 2, bw = W / dias.length;
+    const s = svg("svg", { viewBox: `0 0 ${W} ${H + 14}`, width: "100%", height: H + 14, role: "img",
+      "aria-label": `Comentarios por día de ${n.titulo}` });
+    s.append(svg("line", { x1: 0, x2: W, y1: H, y2: H, stroke: "var(--base)", "stroke-width": 1 }));
+    n.por_dia.forEach((v, i) => {
+      const h = Math.max(v > 0 ? 1.5 : 0, (v / maxDia) * (H - 4));
+      const g = svg("g", {});
+      const hit = svg("rect", { class: "hit", x: i * bw, y: 0, width: bw, height: H });
+      // Barra con la punta redondeada y la base pegada al eje
+      const x = i * bw + gap / 2, w = Math.max(1, bw - gap), r = Math.min(2, w / 2, h);
+      const barra = svg("path", { class: "barra", fill: "var(--barra)",
+        d: h <= 0 ? "" : `M${x},${H}V${H - h + r}Q${x},${H - h} ${x + r},${H - h}H${x + w - r}Q${x + w},${H - h} ${x + w},${H - h + r}V${H}Z` });
+      g.append(hit, barra);
+      conTooltip(hit, fmt.format(v) + " comentarios", `${diaCorto(dias[i])} · ${n.titulo}`);
+      s.append(g);
+    });
+    if (n.origen) {
+      const x = ((new Date(n.origen).getTime() - t0) / 86400000) * bw;
+      s.append(svg("line", { x1: x, x2: x, y1: 0, y2: H, stroke: "var(--tinta)", "stroke-width": 1.5 }));
+      const t = svg("text", { x: Math.min(Math.max(x, 0), W - 34), y: H + 12, "font-size": 10,
+        fill: "var(--tinta-2)" });
+      t.textContent = "origen";
+      s.append(t);
+    }
+    return s;
+  }
+
+  function barraPostura(n) {
+    const total = Math.max(1, n.apoya + n.rechaza), W = 200, H = 10;
+    const pa = n.apoya / total;
+    const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img",
+      "aria-label": `${Math.round(pa * 100)}% apoya, ${Math.round((1 - pa) * 100)}% rechaza` });
+    const wa = Math.max(0, pa * W - 1), wr = Math.max(0, W - pa * W - 1);
+    const a = svg("rect", { x: 0, y: 0, width: wa, height: H, rx: 3, fill: "var(--apoya)" });
+    const r = svg("rect", { x: W - wr, y: 0, width: wr, height: H, rx: 3, fill: "var(--rechaza)" });
+    s.append(a, r);
+    conTooltip(a, fmt.format(n.apoya) + " apoyan", n.titulo);
+    conTooltip(r, fmt.format(n.rechaza) + " rechazan", n.titulo);
+    const caja = el("div", {}, el("span", { class: "etiqueta-movil" }, "Apoya · rechaza"), s,
+      el("div", { class: "postura-num" }, el("span", {}, Math.round(pa * 100) + "% apoya"),
+        el("span", {}, Math.round((1 - pa) * 100) + "% rechaza")));
+    return caja;
+  }
+
+  for (const n of D.narrativas) {
+    const titulo = el("div", {}, el("span", { class: "etiqueta" }, n.narrativa),
+      el("span", { class: "titulo" }, n.titulo), n.emergente ? el("span", { class: "nueva" }, "nace después") : null,
+      el("div", { class: "frases" }, n.frases.join(" · ")));
+    const desde = el("div", { class: "desde" }, el("span", { class: "etiqueta-movil" }, "Desde"),
+      el("b", {}, fecha(n.origen, false)), fecha(n.origen, true).split(" ").pop() + " h");
+    const empuje = el("div", {}, el("span", { class: "etiqueta-movil" }, "Empujada por"));
+    const fuertes = n.ops.filter(o => o.comentarios >= 5);
+    if (fuertes.length) {
+      for (const o of fuertes) {
+        const c = el("span", { class: "chip" }, el("span", { class: "punto", style: `background:${colorOp(o.op)}` }), o.op);
+        conTooltip(c, fmt.format(o.comentarios) + " comentarios", `de cuentas de ${o.op} en esta narrativa`);
+        empuje.append(c);
+      }
+    } else empuje.append(el("span", { class: "genuina" }, "sin operación"));
+    const spark = el("div", {}, el("span", { class: "etiqueta-movil" }, "Comentarios por día"), sparkline(n),
+      el("div", { class: "postura-num" }, el("span", {}, fmt.format(n.total) + " comentarios")));
+    cont.append(el("div", { class: "fila" }, titulo, desde, spark, barraPostura(n), empuje));
+  }
+
+  // --- Red de operaciones -------------------------------------------------------------
+  const leyenda = document.getElementById("leyenda");
+  for (const o of D.operaciones)
+    leyenda.append(el("span", { class: "chip" }, el("span", { class: "punto", style: `background:${colorOp(o.op)}` }),
+      `${o.op} · ${o.cuentas} cuentas`));
+  const W = 560, H = 420, M = 26;
+  const red = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img",
+    "aria-label": "Red de cuentas coordinadas coloreada por operación" });
+  const px = n => M + n.x * (W - 2 * M), py = n => M + n.y * (H - 2 * M);
+  const capaAristas = svg("g", {}), capaNodos = svg("g", {}), capaEtiquetas = svg("g", {});
+  for (const [a, b, w] of D.aristas) {
+    const na = D.nodos[a], nb = D.nodos[b];
+    capaAristas.append(svg("line", { x1: px(na), y1: py(na), x2: px(nb), y2: py(nb),
+      stroke: "var(--base)", "stroke-width": Math.min(2.5, 0.6 + w * 0.25), "stroke-opacity": 0.8 }));
+  }
+  const grado = new Array(D.nodos.length).fill(0);
+  for (const [a, b] of D.aristas) { grado[a]++; grado[b]++; }
+  D.nodos.forEach((n, i) => {
+    const g = svg("g", {});
+    const hit = svg("circle", { class: "hit", cx: px(n), cy: py(n), r: 12 });
+    const c = svg("circle", { cx: px(n), cy: py(n), r: 5, fill: colorOp(n.op), stroke: "var(--superficie)", "stroke-width": 2 });
+    g.append(c, hit);
+    conTooltip(hit, n.id, `${n.op} · ${grado[i]} conexiones fuertes`);
+    capaNodos.append(g);
+  });
+  // Etiqueta directa de cada operación en el centro de sus cuentas (no depender solo del color)
+  for (const o of D.operaciones) {
+    const ns = D.nodos.filter(n => n.op === o.op);
+    if (!ns.length) continue;
+    const cx = ns.reduce((s, n) => s + px(n), 0) / ns.length, cy = Math.min(...ns.map(py)) - 12;
+    const t = svg("text", { x: cx, y: Math.max(12, cy), "text-anchor": "middle", "font-size": 13,
+      "font-weight": 650, fill: "var(--tinta)", "paint-order": "stroke", stroke: "var(--superficie)", "stroke-width": 4 });
+    t.textContent = o.op;
+    capaEtiquetas.append(t);
+  }
+  red.append(capaAristas, capaNodos, capaEtiquetas);
+  document.getElementById("red").append(D.nodos.length ? red : el("p", { class: "ayuda" }, "No se detectaron operaciones."));
+
+  // --- Tarjetas de operaciones (también sirven como "vista en tabla" de la red) --------
+  const lista = document.getElementById("lista-ops");
+  for (const o of D.operaciones) {
+    const narr = narrPorId[o.narrativa];
+    const filas = [
+      ["Cuentas", `${o.cuentas} (${fmt.format(o.comentarios)} comentarios)`],
+      ["Empuja", narr ? `${o.narrativa} · ${narr.titulo}` : "—"],
+      ["Postura", o.postura ? `${o.postura} (${o.porcentaje_en_narrativa}% de sus comentarios van ahí)` : "—"],
+      ["Antigüedad", o.edad_mediana_dias == null ? "sin datos" : `mediana ${o.edad_mediana_dias} días al empezar el período`],
+      ["Horas pico", o.horas_pico.map(h => String(h).padStart(2, "0") + " h").join(", ")],
+      ["Señales", o.capas.join(", ")],
+    ];
+    const dl = el("dl", {});
+    for (const [k, v] of filas) dl.append(el("dt", {}, k), el("dd", {}, v));
+    lista.append(el("div", { class: "tarjeta op" },
+      el("h3", {}, el("span", { class: "punto", style: `background:${colorOp(o.op)};width:10px;height:10px` }), o.op),
+      dl, o.ejemplo ? el("blockquote", {}, "“" + o.ejemplo + "”") : null));
+  }
+
+  const k = D.costo || {};
+  document.getElementById("pie").textContent =
+    `Procesado en ${k.segundos != null ? Math.round(k.segundos) + " s" : "—"} · US$ ${k.usd_ia ?? 0} en IA ` +
+    `(US$ ${k.usd_por_mil_comentarios ?? 0} por cada mil comentarios) · ${k.hardware || ""}. ` +
+    `Generado automáticamente por el pipeline; nada se etiquetó a mano. Datos sintéticos.`;
+})();
+</script>
+</body>
+</html>

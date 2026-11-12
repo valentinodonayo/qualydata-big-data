@@ -24,8 +24,9 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from pipeline import coordinacion, costo, datos, embeddings, ia, narrativas, postura, salida, validar
+from pipeline import coordinacion, costo, dashboard, datos, embeddings, ia, narrativas, postura, salida, validar
 
+RAIZ = Path(__file__).resolve().parent
 ALMACENAMIENTO = "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)"
 
 
@@ -50,7 +51,7 @@ def etapa_narrativas(estado, args):
     """Etapa 4: narrativas, ruido y fecha de origen."""
     com = estado["datos"]["comentarios"]
     # Clasificador de ruido entrenado con la verdad de práctica (si no existe, se usa una regla simple)
-    ruta_modelo = Path(__file__).parent / "modelos" / "ruido.json"
+    ruta_modelo = args.modelo_ruido
     modelo_ruido = json.loads(ruta_modelo.read_text(encoding="utf-8")) if ruta_modelo.exists() else None
     narrativa, tabla, raiz, extra = narrativas.detectar(com, estado["emb"], estado["emb_indice"],
                                                         args.cache, modelo_ruido=modelo_ruido)
@@ -73,6 +74,12 @@ def etapa_postura(estado, args):
         resumen_ia = ia.decidir(resumen, estado["crono"])
     apoya_es, titulos = resumen_ia
     estado["postura"] = postura.posturas(com, bando_com, apoya_es, extra)
+    # Títulos sin IA: el comentario más típico del bando que apoya (mejor que palabras sueltas)
+    representativos = postura.titulos_representativos(com, estado["emb"], estado["emb_indice"], extra,
+                                                      estado["postura"])
+    for n in estado["narrativas"]:
+        if n["narrativa"] in representativos:
+            n["titulo"] = representativos[n["narrativa"]]
     # Si la IA puso títulos más claros, reemplazan a los provisorios
     for n in estado["narrativas"]:
         if n["narrativa"] in titulos:
@@ -124,6 +131,10 @@ def main():
                     help="Carpeta donde se escriben los resultados")
     ap.add_argument("--cache", type=Path, default=Path("cache"),
                     help="Carpeta para la base DuckDB, Parquet y cálculos guardados")
+    ap.add_argument("--modelo-ruido", type=Path, default=Path(__file__).parent / "modelos" / "ruido.json",
+                    help="Coeficientes del clasificador de ruido (para experimentos de generalización)")
+    ap.add_argument("--dashboard", type=Path, default=None,
+                    help="Dónde escribir el dashboard HTML (por defecto reportes/dashboard.html para entrega/)")
     ap.add_argument("--sin-ia", action="store_true",
                     help="No llamar a Claude (usa el respaldo: el bando más grande apoya)")
     args = ap.parse_args()
@@ -154,12 +165,29 @@ def main():
         narrativa=estado.get("narrativa"), postura=estado.get("postura"),
         grupo=estado.get("grupo"), narrativas=estado.get("narrativas"))
 
-    notas = (f"embeddings locales ({embeddings.MODELO}); narrativas: micro-grupos + votos de hilos + Leiden; "
-             f"IA ({ia.MODELO}) solo 1 llamada por narrativa para decidir el bando que apoya y el título; "
-             f"coordinación: copias + llegadas juntas + respuestas + comunidades densas (Leiden), sin IA")
+    uso_ia = (f"IA ({ia.MODELO}) solo 1 llamada por narrativa para decidir qué bando apoya y titularla"
+              if crono.tokens_ia else "IA: no se usó (sin clave); qué bando apoya lo decide el bando más grande")
+    notas = (f"embeddings locales ({embeddings.MODELO}); narrativas: micro-grupos (UMAP+HDBSCAN) + votos de "
+             f"hilos + Leiden; ruido: clasificador entrenado en práctica; {uso_ia}; coordinación: copias + "
+             f"llegadas juntas + respuestas + comunidades densas (Leiden) + hashtag propio, sin IA")
     if errores:
         notas += f"; etapas con error: {', '.join(errores)} (ver cache/reportes/log.txt)"
-    info = costo.escribir_costo(args.entrega, crono, len(estado["comentario_ids"]), ALMACENAMIENTO, notas)
+    info = costo.escribir_costo(args.entrega, crono, len(estado["comentario_ids"]), ALMACENAMIENTO, notas,
+                                embeddings.DISPOSITIVO_USADO)
+
+    # Dashboard HTML (no es parte del formato oficial: si falla, la entrega ya está escrita)
+    ruta_dash = args.dashboard or (RAIZ / "reportes" / "dashboard.html"
+                                   if args.entrega.resolve() == (RAIZ / "entrega").resolve()
+                                   else args.entrega / "dashboard.html")
+    try:
+        d = estado["datos"]
+        datos_dash = dashboard.construir_datos(
+            d["comentarios"], d["cuentas"], estado.get("narrativa") or {}, estado.get("postura") or {},
+            estado.get("grupo") or {}, estado.get("narrativas") or [], estado.get("operaciones") or [],
+            info, args.datos.name)
+        dashboard.escribir(ruta_dash, datos_dash)
+    except Exception:
+        logging.error("✖ No se pudo armar el dashboard:\n%s", traceback.format_exc())
 
     # Validación final: ¿los 4 archivos cumplen el formato oficial?
     problemas = validar.validar_entrega(args.entrega, estado["comentario_ids"], estado["cuenta_ids"])

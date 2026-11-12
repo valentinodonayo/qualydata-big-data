@@ -1,17 +1,17 @@
 {
   "comentarios_procesados": 150000,
-  "segundos": 17.97,
+  "segundos": 111.15,
   "tokens_ia": 0,
   "usd_ia": 0.0,
   "usd_por_mil_comentarios": 0.0,
-  "hardware": "arm64, 10 núcleos, 16 GB RAM, sin GPU dedicada",
+  "hardware": "Apple M5, 10 núcleos, 16 GB RAM; embeddings en la GPU integrada de la Mac (MPS)",
   "almacenamiento": "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)",
-  "notas": "embeddings locales (intfloat/multilingual-e5-small); narrativas: micro-grupos + votos de hilos + Leiden; IA (claude-haiku-5-5) solo 1 llamada por narrativa para decidir el bando que apoya y el título; coordinación: copias + llegadas juntas + respuestas + comunidades densas (Leiden), sin IA",
+  "notas": "embeddings locales (intfloat/multilingual-e5-small); narrativas: micro-grupos (UMAP+HDBSCAN) + votos de hilos + Leiden; ruido: clasificador entrenado en práctica; IA: no se usó (sin clave); qué bando apoya lo decide el bando más grande; coordinación: copias + llegadas juntas + respuestas + comunidades densas (Leiden) + hashtag propio, sin IA",
   "segundos_por_etapa": {
-    "datos": 0.63,
-    "embeddings": 0.94,
-    "narrativas": 12.53,
-    "postura": 0.38,
-    "coordinacion": 3.36
+    "datos": 0.55,
+    "embeddings": 35.11,
+    "narrativas": 70.61,
+    "postura": 0.57,
+    "coordinacion": 4.11
   }
 }

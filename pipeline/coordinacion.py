@@ -12,6 +12,11 @@ que se comporta junto más de lo que el azar explicaría. Buscamos 4 tipos de se
         >= 3 publicaciones distintas y eso es >= 30% de la actividad de la menos activa.
         Los grupos = cuentas conectadas entre sí (5 o más).
 
+  E) Adhesión (después de armar las operaciones): se suma a una operación la cuenta que
+     usa su HASHTAG PROPIO (uno que en >= 2/3 de sus usos aparece en cuentas de esa
+     operación) o que intercambia >= 3 respuestas con >= 2 miembros distintos. Rescata
+     cuentas de poca actividad que no llegaron a 3 coincidencias con un mismo par.
+
   D) Red de respuestas "con ciclos": en una charla normal las respuestas forman un
      árbol (cada uno contesta a uno). Un grupo coordinado se responde entre todos y
      forma una red llena de ciclos. Con Leiden buscamos comunidades en el grafo de
@@ -23,6 +28,7 @@ Todo es conteo y grafos: no usa IA y tarda pocos segundos con 200.000 comentario
 """
 import itertools
 import logging
+import os
 import re
 import unicodedata
 from collections import defaultdict
@@ -42,7 +48,11 @@ MIN_FRACCION = 0.3             # par: ...y que sea >= 30% de la actividad de la 
 MIN_CUENTAS_GRUPO = 5          # un grupo necesita 5 cuentas o más
 RESOLUCION_RESPUESTAS = 0.05   # capa D: resolución de Leiden (CPM): comunidades chicas y densas
 MIN_CONEXIONES_POR_CUENTA = 1.6  # capa D: un árbol tiene ~1; los grupos coordinados, 2 o más
-SEMILLA = 42
+HASHTAG_MIN_USOS = 10          # capa E: un hashtag cuenta si se usó al menos 10 veces...
+HASHTAG_FRACCION_OP = 2 / 3    # ...y una mayoría clara (2 de cada 3 usos) es de UNA operación
+MIN_RESPUESTAS_ADHESION = 3    # capa E: respuestas intercambiadas con miembros de la operación
+MIN_MIEMBROS_ADHESION = 2      # ...con al menos 2 miembros distintos
+SEMILLA = int(os.environ.get("QUALY_SEMILLA", "42"))   # fija; se cambia solo para medir estabilidad
 
 CUENTA_DESCONOCIDA = "desconocida"   # la pone datos.py cuando falta la cuenta: no se mezcla
 
@@ -164,6 +174,52 @@ def _grupos_por_red_de_respuestas(com):
     return grupos
 
 
+def _normalizar_hashtag(tag):
+    """'#DiqueSííí' -> '#diquesi' (sin mayúsculas, acentos ni letras estiradas)."""
+    t = unicodedata.normalize("NFD", tag.lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return re.sub(r"(\w)\1{2,}", r"\1", t)
+
+
+def _adhesion(com, grupo):
+    """Capa E: cuentas que se suman a una operación ya detectada. Devuelve {cuenta: operación}."""
+    nuevas = {}
+    # E1) Hashtag propio de una operación
+    usos = defaultdict(list)   # hashtag -> [cuenta, cuenta, ...] (una entrada por uso)
+    for cuenta, texto in zip(com["cuenta_id"], com["texto"]):
+        for tag in re.findall(r"#\w+", str(texto)):
+            usos[_normalizar_hashtag(tag)].append(cuenta)
+    for tag, cuentas in usos.items():
+        if len(cuentas) < HASHTAG_MIN_USOS:
+            continue
+        por_op = pd.Series([grupo.get(c, "") for c in cuentas])
+        por_op = por_op[por_op != ""].value_counts()
+        if por_op.empty or por_op.iloc[0] / len(cuentas) < HASHTAG_FRACCION_OP:
+            continue
+        for c in set(cuentas):
+            if c not in grupo:
+                nuevas.setdefault(c, por_op.index[0])
+    # E2) Muchas respuestas con varios miembros de la misma operación
+    autor = dict(zip(com["comentario_id"], com["cuenta_id"]))
+    respuestas = defaultdict(lambda: defaultdict(list))   # cuenta -> operación -> [miembros]
+    for cuenta, padre in zip(com["cuenta_id"], com["respuesta_a"]):
+        otra = autor.get(padre) if isinstance(padre, str) else None
+        if not otra or otra == cuenta:
+            continue
+        if otra in grupo and cuenta not in grupo:
+            respuestas[cuenta][grupo[otra]].append(otra)
+        if cuenta in grupo and otra not in grupo:
+            respuestas[otra][grupo[cuenta]].append(cuenta)
+    for c, por_op in sorted(respuestas.items()):
+        for op, miembros in sorted(por_op.items()):
+            if len(miembros) >= MIN_RESPUESTAS_ADHESION and len(set(miembros)) >= MIN_MIEMBROS_ADHESION:
+                nuevas.setdefault(c, op)
+    nuevas.pop(CUENTA_DESCONOCIDA, None)
+    if nuevas:
+        logging.info("Coordinación (capa E): %s cuentas se suman por hashtag propio o respuestas", len(nuevas))
+    return nuevas
+
+
 def detectar(com: pd.DataFrame):
     """Devuelve (grupo, resumen).
 
@@ -185,6 +241,12 @@ def detectar(com: pd.DataFrame):
                 break
         else:
             operaciones.append((set(g), {"red de respuestas"}))
+
+    # Capa E: adhesión de cuentas a las operaciones ya armadas
+    provisorio = {c: i for i, (cuentas, _) in enumerate(operaciones) for c in sorted(cuentas)}
+    for c, i in _adhesion(com, provisorio).items():
+        operaciones[i][0].add(c)
+        operaciones[i][1].add("adhesión")
 
     # Etiquetas op01, op02... de la operación más grande a la más chica
     operaciones.sort(key=lambda x: -len(x[0]))

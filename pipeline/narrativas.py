@@ -26,6 +26,7 @@ de práctica), para que funcione igual con el set final.
 """
 import hashlib
 import logging
+import os
 from collections import Counter
 from pathlib import Path
 
@@ -35,7 +36,7 @@ import pandas as pd
 from pipeline import hilos
 from pipeline import texto as tx
 
-SEMILLA = 42
+SEMILLA = int(os.environ.get("QUALY_SEMILLA", "42"))   # fija; se cambia solo para medir estabilidad
 FRACCION_MICRO = 0.001     # un micro-grupo tiene al menos el 0,1% de los textos a agrupar
 MINIMO_MICRO = 15          # ...y nunca menos de 15 textos
 MIN_SAMPLES = 10           # qué tan "denso" tiene que ser un grupo para HDBSCAN

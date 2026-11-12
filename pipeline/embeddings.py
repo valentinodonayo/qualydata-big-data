@@ -28,7 +28,8 @@ MODELO = "intfloat/multilingual-e5-small"
 REVISION = "614241f622f53c4eeff9890bdc4f31cfecc418b3"
 PREFIJO = "query: "        # los modelos e5 esperan este prefijo delante de cada texto
 TAMANO_LOTE = 256           # cuántos textos procesa juntos
-LARGO_MAXIMO = 64           # los comentarios son cortos: cortar en 64 tokens acelera mucho
+LARGO_MAXIMO = 64
+DISPOSITIVO_USADO = None    # lo completa calcular(); se informa en costo.json           # los comentarios son cortos: cortar en 64 tokens acelera mucho
 
 
 def _elegir_dispositivo():
@@ -60,6 +61,9 @@ def calcular(textos, carpeta_cache: Path):
     unicos = unicos.tolist()
     logging.info("Embeddings: %s comentarios -> %s textos distintos", len(textos), len(unicos))
 
+    global DISPOSITIVO_USADO
+    DISPOSITIVO_USADO = _elegir_dispositivo()
+
     # La "huella" (hash) depende del modelo y de los textos: si algo cambia, se recalcula
     huella = hashlib.sha1((MODELO + "\n" + "\n".join(unicos)).encode("utf-8")).hexdigest()[:16]
     ruta = carpeta_cache / "embeddings" / f"{huella}.npy"
@@ -68,7 +72,7 @@ def calcular(textos, carpeta_cache: Path):
         return np.load(ruta), indice
 
     from sentence_transformers import SentenceTransformer   # se importa acá porque tarda
-    dispositivo = _elegir_dispositivo()
+    dispositivo = DISPOSITIVO_USADO
     logging.info("Embeddings: calculando con %s en %s", MODELO, dispositivo)
     modelo = SentenceTransformer(MODELO, device=dispositivo, revision=REVISION)
     modelo.max_seq_length = LARGO_MAXIMO

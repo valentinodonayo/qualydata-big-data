@@ -171,7 +171,7 @@ def cargar(carpeta_datos: Path, carpeta_cache: Path):
     carpeta_parquet = carpeta_cache / "parquet"
     carpeta_parquet.mkdir(exist_ok=True)
     for tabla in ("comentarios", "cuentas", "publicaciones"):
-        con.execute(f"COPY {tabla} TO '{carpeta_parquet / tabla}.parquet' (FORMAT parquet)")
+        con.execute(f"COPY {tabla} TO '{carpeta_parquet / tabla}.parquet' (FORMAT parquet, COMPRESSION zstd)")
 
     resultado = {
         "comentarios": con.execute("SELECT * FROM comentarios").df(),

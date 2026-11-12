@@ -15,6 +15,7 @@ Entonces, dentro de cada narrativa:
    mirando ejemplos de cada bando; si no hay IA, se elige el bando más grande.
 """
 import logging
+import os
 from collections import defaultdict
 
 import numpy as np
@@ -112,7 +113,7 @@ def calcular_bandos(com, emb, emb_indice, extra):
         for b in (0, 1):
             pos = np.where(en_narr & es_raiz & (bando_com == b))[0]
             largos = [i for i in pos if len(textos[i].split()) >= 8]
-            elegidos = np.random.default_rng(42).permutation(largos or list(pos))[:12]
+            elegidos = np.random.default_rng(int(os.environ.get("QUALY_SEMILLA", "42"))).permutation(largos or list(pos))[:12]
             ejemplos.append([textos[i] for i in elegidos])
         tamano = [int(((bando_com == b) & en_narr).sum()) for b in (0, 1)]
         resumen[etiqueta] = {"tamano": tamano, "ejemplos": ejemplos}
@@ -137,3 +138,47 @@ def posturas(com, bando_com, apoya_es, extra):
         if narr[i] != "" and todas.get(c):
             resultado[c] = todas[c]
     return resultado
+
+
+import re as _re
+
+_LIMPIAR = _re.compile(r"@\w+|#\w+|https?://\S+|www\.\S+")
+_PEDAZOS = _re.compile(r"[.:,;!?]")
+_REPETIDAS = _re.compile(r"(\w)\1{2,}")      # "precioooo" -> "precio"
+
+
+def titulos_representativos(com, emb, emb_indice, extra, postura_com, min_palabras=6, max_palabras=20):
+    """Título sin IA: el comentario que mejor resume lo que AFIRMA cada narrativa.
+
+    Para cada narrativa toma las raíces que la apoyan, de largo razonable, calcula su
+    "centro" de significado y elige la más cercana a ese centro (la más típica).
+    Le saca menciones, hashtags y links. Devuelve {narrativa: titulo}.
+    """
+    narr = extra["narr_num"]
+    padre = extra["pos_padre"]
+    ids = com["comentario_id"].tolist()
+    textos = com["texto"].tolist()
+    titulos = {}
+    for etiqueta in sorted(set(narr) - {""}):
+        limpio = {}
+        for i in np.where((narr == etiqueta) & (padre < 0))[0]:
+            if postura_com.get(ids[i]) != "apoya":
+                continue
+            t = " ".join(_LIMPIAR.sub(" ", str(textos[i])).split())
+            if min_palabras <= len(t.split()) <= max_palabras:
+                limpio[i] = t
+        if not limpio:
+            continue
+        pos = np.array(sorted(limpio))
+        V = emb[emb_indice[pos]]
+        centro = V.mean(0)
+        # Entre los 30 más típicos, el más "limpio": el que tiene menos pedazos sueltos
+        # (muletillas tipo "Escuchen:", "ojo", "Triste" agregan comas, puntos y dos puntos)
+        cercanos = pos[np.argsort(-(V @ centro))[:30]]
+        pedazos = lambda i: len([x for x in _PEDAZOS.split(limpio[i]) if x.strip()])
+        mejor = min(cercanos, key=lambda i: (pedazos(i), list(cercanos).index(i)))
+        t = _REPETIDAS.sub(r"\1", limpio[mejor]).strip(" .,;")
+        if t.isupper():          # TODO EN MAYÚSCULAS se lee como un grito: lo bajamos
+            t = t.lower()
+        titulos[etiqueta] = (t[0].upper() + t[1:])[:120]
+    return titulos

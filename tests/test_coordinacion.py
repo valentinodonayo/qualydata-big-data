@@ -45,3 +45,20 @@ def test_sin_respuestas_ni_coincidencias_no_marca_a_nadie():
     df = df[~df["cuenta_id"].str.startswith("bot")]
     grupo, _ = coordinacion.detectar(df)
     assert grupo == {}
+
+
+def test_adhesion_por_hashtag_propio():
+    """Una cuenta de poca actividad que usa el hashtag de la operación se suma a ella;
+    una que usa un hashtag popular entre la gente común, no."""
+    df = _armar()
+    extra = [
+        _fila(9001, "p50", "rezagada", BASE + 9 * 86400, "Vamos que se puede #VamosCardonal"),
+        _fila(9002, "p51", "comun", BASE + 9 * 86400, "Qué lindo día #Primavera"),
+    ]
+    # #Primavera lo usan muchas cuentas genuinas (no es "propio" de ninguna operación)
+    extra += [_fila(9100 + g, f"p{60 + g}", f"vecino{g}", BASE + g * 3600, "Llegó #Primavera")
+              for g in range(15)]
+    grupo, resumen = coordinacion.detectar(pd.concat([df, pd.DataFrame(extra)], ignore_index=True))
+    assert grupo.get("rezagada") == grupo["bot0"]
+    assert "comun" not in grupo and not any(c.startswith("vecino") for c in grupo)
+    assert "adhesión" in resumen[0]["capas"]
