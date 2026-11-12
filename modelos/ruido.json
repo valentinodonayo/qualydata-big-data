@@ -1,0 +1,17 @@
+{
+  "rasgos": [
+    "palabras",
+    "sim1",
+    "margen",
+    "pregunta"
+  ],
+  "coeficientes": {
+    "palabras": -0.723459,
+    "sim1": -51.517595,
+    "margen": -11.453284,
+    "pregunta": 3.062695
+  },
+  "intercepto": 50.54408392054009,
+  "entrenado_con": "verdad del set de práctica (raíces dudosas)",
+  "f1_practica": 0.9744
+}

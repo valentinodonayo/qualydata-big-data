@@ -9,12 +9,13 @@ en el log y se sigue con las demás. Al final SIEMPRE se escribe una entrega/
 válida, aunque sea con resultados parciales.
 """
 import argparse
+import json
 import logging
 import sys
 import traceback
 from pathlib import Path
 
-from pipeline import costo, datos, embeddings, salida
+from pipeline import costo, datos, embeddings, hilos, narrativas, salida
 
 ALMACENAMIENTO = "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)"
 
@@ -37,8 +38,27 @@ def etapa_embeddings(estado, args):
 
 
 def etapa_narrativas(estado, args):
-    """Etapa 4 (todavía vacía): por ahora todo queda como ruido. Llega en el bloque 3."""
-    estado["narrativa"], estado["postura"], estado["narrativas"] = {}, {}, []
+    """Etapa 4: narrativas, ruido y fecha de origen."""
+    com = estado["datos"]["comentarios"]
+    # Clasificador de ruido entrenado con la verdad de práctica (si no existe, se usa una regla simple)
+    ruta_modelo = Path(__file__).parent / "modelos" / "ruido.json"
+    modelo_ruido = json.loads(ruta_modelo.read_text(encoding="utf-8")) if ruta_modelo.exists() else None
+    narrativa, tabla, raiz = narrativas.detectar(com, estado["emb"], estado["emb_indice"], args.cache,
+                                                 modelo_ruido=modelo_ruido)
+    estado["narrativa"], estado["tabla_narrativas"], estado["raiz"] = narrativa, tabla, raiz
+    estado["narrativas"] = [{"narrativa": n["narrativa"], "titulo": n["titulo"],
+                             "frases_clave": n["frases_clave"],
+                             "fecha_origen": salida.ts_a_iso(n["origen_ts"])} for n in tabla]
+
+
+def etapa_postura(estado, args):
+    """Etapa 4b (provisoria): raíces = "apoya"; respuestas = regla del largo. Mejora en el bloque 4."""
+    com = estado["datos"]["comentarios"]
+    ids = com["comentario_id"].tolist()
+    raices = {c for c in ids if estado["raiz"][c] == c and c in estado["narrativa"]}
+    postura = hilos.posturas_por_hilo(ids, com["respuesta_a"].tolist(), com["texto"].tolist(),
+                                      {c: "apoya" for c in raices})
+    estado["postura"] = {c: p for c, p in postura.items() if c in estado["narrativa"] and p}
 
 
 def etapa_coordinacion(estado, args):
@@ -51,6 +71,7 @@ ETAPAS = [
     ("datos", etapa_datos),
     ("embeddings", etapa_embeddings),
     ("narrativas", etapa_narrativas),
+    ("postura", etapa_postura),
     ("coordinacion", etapa_coordinacion),
 ]
 
