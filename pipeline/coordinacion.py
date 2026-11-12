@@ -1,0 +1,198 @@
+"""Etapa 5: detectar cuentas coordinadas (bots o "granjas") y agruparlas en operaciones.
+
+Idea general: una cuenta sola no es sospechosa; lo sospechoso es un GRUPO de cuentas
+que se comporta junto más de lo que el azar explicaría. Buscamos 4 tipos de señal
+("capas") y conectamos las cuentas que las comparten:
+
+  A) Copiar y pegar: el mismo texto (largo) publicado por 3 a 80 cuentas en <= 30 min.
+  B) Llegar juntas: comentar en la misma publicación en la misma franja de 15 min,
+     en momentos con poca gente (si hay mucha gente, coincidir no dice nada).
+  C) Responderse: una cuenta le responde a la otra.
+     -> A, B y C se suman por PAR de cuentas. Un par queda conectado si coincide en
+        >= 3 publicaciones distintas y eso es >= 30% de la actividad de la menos activa.
+        Los grupos = cuentas conectadas entre sí (5 o más).
+
+  D) Red de respuestas "con ciclos": en una charla normal las respuestas forman un
+     árbol (cada uno contesta a uno). Un grupo coordinado se responde entre todos y
+     forma una red llena de ciclos. Con Leiden buscamos comunidades en el grafo de
+     "quién responde a quién" y marcamos las que tienen >= 1,6 conexiones por cuenta
+     (un árbol tiene casi exactamente 1). Esta capa atrapa a las campañas de textos
+     variados, que A y B no ven.
+
+Todo es conteo y grafos: no usa IA y tarda pocos segundos con 200.000 comentarios.
+"""
+import itertools
+import logging
+import re
+import unicodedata
+from collections import defaultdict
+
+import igraph as ig
+import leidenalg as la
+import pandas as pd
+
+# --- Parámetros (medidos con el set de práctica; ver experimentos/runs.csv) ---------
+LARGO_MINIMO_TEXTO = 25        # capa A: textos más cortos ("jaja", "gracias") se repiten solos
+CUENTAS_MIN_TEXTO, CUENTAS_MAX_TEXTO = 3, 80   # capa A: cuántas cuentas repiten el texto
+VENTANA_TEXTO_S = 30 * 60      # capa A: copias dentro de 30 minutos
+FRANJA_S = 15 * 60             # capa B: tamaño de la franja de tiempo
+MAX_CUENTAS_FRANJA = 30        # capa B: momentos con más gente no cuentan
+MIN_PUBLICACIONES = 3          # par: coincidir en al menos 3 publicaciones distintas
+MIN_FRACCION = 0.3             # par: ...y que sea >= 30% de la actividad de la menos activa
+MIN_CUENTAS_GRUPO = 5          # un grupo necesita 5 cuentas o más
+RESOLUCION_RESPUESTAS = 0.05   # capa D: resolución de Leiden (CPM): comunidades chicas y densas
+MIN_CONEXIONES_POR_CUENTA = 1.6  # capa D: un árbol tiene ~1; los grupos coordinados, 2 o más
+SEMILLA = 42
+
+CUENTA_DESCONOCIDA = "desconocida"   # la pone datos.py cuando falta la cuenta: no se mezcla
+
+
+def _normalizar(texto):
+    """Texto "esqueleto" para comparar copias: sin mayúsculas, acentos, hashtags,
+    menciones, links, signos ni letras estiradas ("siiiii" -> "si")."""
+    t = unicodedata.normalize("NFD", str(texto).lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    t = re.sub(r"#\w+|@\w+|https?:\S+", " ", t)
+    t = re.sub(r"[^a-zñ0-9 ]", " ", t)
+    t = re.sub(r"(\w)\1{2,}", r"\1", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _pares_por_senales(com):
+    """Capas A, B y C: para cada par de cuentas, en qué publicaciones coincidieron."""
+    pares = defaultdict(set)   # (cuenta_a, cuenta_b) -> {publicaciones}
+
+    def sumar(a, b, publicacion):
+        if a != b:
+            pares[(a, b) if a < b else (b, a)].add(publicacion)
+
+    con_fecha = com[com["ts"].notna()]
+    ts = con_fecha["ts"].astype("int64")
+
+    # Capa A: copiar y pegar
+    norm = con_fecha["texto"].map(_normalizar)
+    largos = con_fecha.assign(norm=norm, t=ts)[norm.str.len() >= LARGO_MINIMO_TEXTO]
+    for _, g in largos.groupby("norm"):
+        if not CUENTAS_MIN_TEXTO <= g["cuenta_id"].nunique() <= CUENTAS_MAX_TEXTO:
+            continue
+        filas = sorted(zip(g["t"], g["cuenta_id"], g["publicacion_id"]))
+        for i in range(len(filas)):
+            for j in range(i + 1, len(filas)):
+                if filas[j][0] - filas[i][0] > VENTANA_TEXTO_S:
+                    break   # están ordenadas por tiempo: las siguientes quedan más lejos
+                sumar(filas[i][1], filas[j][1], filas[i][2])
+
+    # Capa B: llegar juntas. Usamos dos "grillas" de franjas corridas media franja,
+    # para no perder a dos cuentas que caen justo a cada lado de un corte.
+    for corrimiento in (0, FRANJA_S // 2):
+        franja = (ts + corrimiento) // FRANJA_S
+        clave = con_fecha["publicacion_id"] + "@" + franja.astype(str)
+        for k, cuentas in con_fecha.groupby(clave)["cuenta_id"]:
+            presentes = sorted(set(cuentas))
+            if len(presentes) < 2 or len(presentes) > MAX_CUENTAS_FRANJA:
+                continue
+            publicacion = k.split("@")[0]
+            for a, b in itertools.combinations(presentes, 2):
+                sumar(a, b, publicacion)
+
+    # Capa C: responderse
+    autor = dict(zip(com["comentario_id"], com["cuenta_id"]))
+    for cuenta, publicacion, padre in zip(com["cuenta_id"], com["publicacion_id"], com["respuesta_a"]):
+        otra = autor.get(padre) if isinstance(padre, str) else None
+        if otra:
+            sumar(cuenta, otra, publicacion)
+    return pares
+
+
+def _grupos_por_pares(com, pares):
+    """Une las cuentas de los pares fuertes y devuelve los grupos de 5 o más."""
+    publicaciones_de = com.groupby("cuenta_id")["publicacion_id"].nunique().to_dict()
+    vecinos = defaultdict(set)
+    for (a, b), pubs in pares.items():
+        if len(pubs) < MIN_PUBLICACIONES:
+            continue
+        if len(pubs) / min(publicaciones_de[a], publicaciones_de[b]) < MIN_FRACCION:
+            continue   # coinciden poco comparado con todo lo que comentan: casualidad
+        vecinos[a].add(b)
+        vecinos[b].add(a)
+
+    # Componentes conexas: recorremos la red y juntamos a todos los que se tocan
+    grupos, visto = [], set()
+    for inicio in list(vecinos):
+        if inicio in visto:
+            continue
+        pila, componente = [inicio], []
+        while pila:
+            c = pila.pop()
+            if c in visto:
+                continue
+            visto.add(c)
+            componente.append(c)
+            pila.extend(vecinos[c] - visto)
+        if len(componente) >= MIN_CUENTAS_GRUPO:
+            grupos.append(set(componente))
+    return grupos
+
+
+def _grupos_por_red_de_respuestas(com):
+    """Capa D: comunidades del grafo de respuestas que tienen muchos más ciclos que un árbol."""
+    autor = dict(zip(com["comentario_id"], com["cuenta_id"]))
+    peso = defaultdict(int)   # (a, b) -> cuántas veces se respondieron
+    for cuenta, padre in zip(com["cuenta_id"], com["respuesta_a"]):
+        otra = autor.get(padre) if isinstance(padre, str) else None
+        if otra and otra != cuenta and CUENTA_DESCONOCIDA not in (cuenta, otra):
+            peso[(cuenta, otra) if cuenta < otra else (otra, cuenta)] += 1
+    if not peso:
+        return []
+
+    nombres = sorted({c for par in peso for c in par})
+    numero = {n: i for i, n in enumerate(nombres)}
+    grafo = ig.Graph(n=len(nombres), edges=[(numero[a], numero[b]) for a, b in peso],
+                     edge_attrs={"weight": list(peso.values())})
+    # CPM busca comunidades más densas que la "resolución"; con 0,05 salen grupos chicos
+    particion = la.find_partition(grafo, la.CPMVertexPartition, weights="weight",
+                                  resolution_parameter=RESOLUCION_RESPUESTAS, seed=SEMILLA)
+    grupos = []
+    for comunidad in particion:
+        if len(comunidad) < MIN_CUENTAS_GRUPO:
+            continue
+        conexiones = grafo.subgraph(comunidad).ecount()
+        if conexiones / len(comunidad) >= MIN_CONEXIONES_POR_CUENTA:
+            grupos.append({nombres[i] for i in comunidad})
+            logging.info("Coordinación (capa D): comunidad de %s cuentas con %s conexiones",
+                         len(comunidad), conexiones)
+    return grupos
+
+
+def detectar(com: pd.DataFrame):
+    """Devuelve (grupo, resumen).
+
+    grupo:   {cuenta_id: "op01", ...} solo para las cuentas marcadas como coordinadas
+    resumen: lista de operaciones con sus cuentas y por qué capa se detectaron
+    """
+    com = com[com["cuenta_id"] != CUENTA_DESCONOCIDA]
+    grupos_abc = _grupos_por_pares(com, _pares_por_senales(com))
+    grupos_d = _grupos_por_red_de_respuestas(com)
+
+    # Juntamos las dos listas. Si un grupo de la capa D se pisa con uno de A-C,
+    # se fusionan (es la misma operación vista desde dos señales).
+    operaciones = [(g, {"texto/tiempo/respuestas"}) for g in grupos_abc]
+    for g in grupos_d:
+        for cuentas, capas in operaciones:
+            if cuentas & g:
+                cuentas |= g
+                capas.add("red de respuestas")
+                break
+        else:
+            operaciones.append((set(g), {"red de respuestas"}))
+
+    # Etiquetas op01, op02... de la operación más grande a la más chica
+    operaciones.sort(key=lambda x: -len(x[0]))
+    grupo, resumen = {}, []
+    for i, (cuentas, capas) in enumerate(operaciones, start=1):
+        etiqueta = f"op{i:02d}"
+        for c in cuentas:
+            grupo.setdefault(c, etiqueta)
+        resumen.append({"grupo": etiqueta, "cuentas": len(cuentas), "capas": sorted(capas)})
+    logging.info("Coordinación: %s operaciones, %s cuentas marcadas", len(resumen), len(grupo))
+    return grupo, resumen

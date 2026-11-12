@@ -15,7 +15,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from pipeline import costo, datos, embeddings, ia, narrativas, postura, salida
+from pipeline import coordinacion, costo, datos, embeddings, ia, narrativas, postura, salida
 
 ALMACENAMIENTO = "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)"
 
@@ -72,8 +72,12 @@ def etapa_postura(estado, args):
 
 
 def etapa_coordinacion(estado, args):
-    """Etapa 5 (todavía vacía): por ahora ninguna cuenta marcada. Llega en el bloque 5."""
-    estado["grupo"] = {}
+    """Etapa 5: cuentas coordinadas (copias, llegadas juntas, respuestas y red de respuestas)."""
+    estado["grupo"], estado["operaciones"] = coordinacion.detectar(estado["datos"]["comentarios"])
+    # Guardamos el resumen de operaciones para el dashboard (bloque 7)
+    ruta = args.cache / "reportes" / "operaciones.json"
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    ruta.write_text(json.dumps(estado["operaciones"], ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # Orden de las etapas. Agregar una etapa nueva = sumar una línea acá.
@@ -136,7 +140,8 @@ def main():
         grupo=estado.get("grupo"), narrativas=estado.get("narrativas"))
 
     notas = (f"embeddings locales ({embeddings.MODELO}); narrativas: micro-grupos + votos de hilos + Leiden; "
-             f"IA ({ia.MODELO}) solo 1 llamada por narrativa para decidir el bando que apoya y el título")
+             f"IA ({ia.MODELO}) solo 1 llamada por narrativa para decidir el bando que apoya y el título; "
+             f"coordinación: copias + llegadas juntas + respuestas + comunidades densas (Leiden), sin IA")
     if errores:
         notas += f"; etapas con error: {', '.join(errores)} (ver cache/reportes/log.txt)"
     info = costo.escribir_costo(args.entrega, crono, len(estado["comentario_ids"]), ALMACENAMIENTO, notas)
