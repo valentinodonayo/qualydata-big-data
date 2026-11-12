@@ -1,0 +1,22 @@
+# Archivos que git NO sube al repositorio.
+
+# Entorno virtual de Python (lo recrea "uv sync" en cualquier compu)
+.venv/
+__pycache__/
+*.pyc
+
+# Datos: son pesados y se bajan del repo oficial. El set final no se puede subir.
+datos/
+
+# Corridas de práctica (la carpeta entrega/ SÍ se sube: es lo que se puntúa)
+salida/
+
+# Cache de cálculos caros (embeddings, etc.): se regenera sola
+cache/
+
+# Claves y secretos: NUNCA al repo
+.env
+.env.*
+
+# Basura del sistema operativo
+.DS_Store
