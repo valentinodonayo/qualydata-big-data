@@ -14,7 +14,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from pipeline import costo, datos, salida
+from pipeline import costo, datos, embeddings, salida
 
 ALMACENAMIENTO = "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)"
 
@@ -30,6 +30,12 @@ def etapa_datos(estado, args):
                  len(d["comentarios"]), len(estado["cuenta_ids"]), len(d["publicaciones"]))
 
 
+def etapa_embeddings(estado, args):
+    """Etapa 3: un vector de significado por comentario (con cache)."""
+    textos = estado["datos"]["comentarios"]["texto"].tolist()
+    estado["emb"], estado["emb_indice"] = embeddings.calcular(textos, args.cache)
+
+
 def etapa_narrativas(estado, args):
     """Etapa 4 (todavía vacía): por ahora todo queda como ruido. Llega en el bloque 3."""
     estado["narrativa"], estado["postura"], estado["narrativas"] = {}, {}, []
@@ -43,6 +49,7 @@ def etapa_coordinacion(estado, args):
 # Orden de las etapas. Agregar una etapa nueva = sumar una línea acá.
 ETAPAS = [
     ("datos", etapa_datos),
+    ("embeddings", etapa_embeddings),
     ("narrativas", etapa_narrativas),
     ("coordinacion", etapa_coordinacion),
 ]
@@ -54,6 +61,9 @@ def configurar_log(ruta_log: Path):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S",
                         handlers=[logging.StreamHandler(sys.stdout),
                                   logging.FileHandler(ruta_log, mode="w", encoding="utf-8")])
+    # Las librerías de descarga de modelos anotan cada pedido web: los silenciamos
+    for ruidosa in ("httpx", "huggingface_hub", "sentence_transformers", "urllib3"):
+        logging.getLogger(ruidosa).setLevel(logging.WARNING)
 
 
 def main():
@@ -92,7 +102,7 @@ def main():
         narrativa=estado.get("narrativa"), postura=estado.get("postura"),
         grupo=estado.get("grupo"), narrativas=estado.get("narrativas"))
 
-    notas = "esqueleto del pipeline (bloque 1): sin modelos todavía"
+    notas = f"embeddings locales ({embeddings.MODELO}); narrativas y bots: en construcción"
     if errores:
         notas += f"; etapas con error: {', '.join(errores)} (ver cache/reportes/log.txt)"
     info = costo.escribir_costo(args.entrega, crono, len(estado["comentario_ids"]), ALMACENAMIENTO, notas)
