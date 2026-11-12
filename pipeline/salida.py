@@ -37,8 +37,9 @@ def escribir_entrega(carpeta: Path, comentario_ids, cuenta_ids,
 
     # --- comentarios.csv --------------------------------------------------------
     com = pd.DataFrame({"comentario_id": list(comentario_ids)})
-    com["narrativa"] = com["comentario_id"].map(narrativa).fillna("").astype(str)
-    com["postura"] = com["comentario_id"].map(postura).fillna("").astype(str).str.lower()
+    # .get(c, "") en vez de map+fillna: funciona igual aunque el diccionario venga vacío
+    com["narrativa"] = [str(narrativa.get(c, "")) for c in com["comentario_id"]]
+    com["postura"] = [str(postura.get(c, "")).lower() for c in com["comentario_id"]]
     # Reglas de formato: la postura solo puede ser apoya/rechaza, y el ruido no lleva postura
     com.loc[~com["postura"].isin(POSTURAS_VALIDAS), "postura"] = ""
     com.loc[com["narrativa"] == "", "postura"] = ""
@@ -56,7 +57,7 @@ def escribir_entrega(carpeta: Path, comentario_ids, cuenta_ids,
 
     # --- cuentas.csv ------------------------------------------------------------
     cue = pd.DataFrame({"cuenta_id": list(cuenta_ids)})
-    cue["grupo"] = cue["cuenta_id"].map(grupo).fillna("").astype(str)
+    cue["grupo"] = [str(grupo.get(c, "")) for c in cue["cuenta_id"]]
     cue.to_csv(carpeta / "cuentas.csv", index=False)
 
     return {"comentarios": len(com), "narrativas": len(tabla),

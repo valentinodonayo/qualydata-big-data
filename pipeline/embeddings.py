@@ -16,6 +16,7 @@ Trucos para que sea rápido y barato:
 """
 import hashlib
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -23,14 +24,22 @@ import numpy as np
 from pipeline import texto as tx
 
 MODELO = "intfloat/multilingual-e5-small"
+# Versión exacta del modelo en Hugging Face: si el autor lo actualiza, seguimos usando esta
+REVISION = "614241f622f53c4eeff9890bdc4f31cfecc418b3"
 PREFIJO = "query: "        # los modelos e5 esperan este prefijo delante de cada texto
 TAMANO_LOTE = 256           # cuántos textos procesa juntos
 LARGO_MAXIMO = 64           # los comentarios son cortos: cortar en 64 tokens acelera mucho
 
 
 def _elegir_dispositivo():
-    """Usa la GPU de la Mac (MPS) si existe; si no, el procesador (CPU)."""
+    """Usa la GPU de la Mac (MPS) si existe; si no, el procesador (CPU).
+
+    Se puede forzar con la variable de entorno QUALY_DISPOSITIVO=cpu (o mps / cuda).
+    """
     import torch
+    forzado = os.environ.get("QUALY_DISPOSITIVO", "").strip().lower()
+    if forzado:
+        return forzado
     if torch.backends.mps.is_available():
         return "mps"
     if torch.cuda.is_available():
@@ -61,7 +70,7 @@ def calcular(textos, carpeta_cache: Path):
     from sentence_transformers import SentenceTransformer   # se importa acá porque tarda
     dispositivo = _elegir_dispositivo()
     logging.info("Embeddings: calculando con %s en %s", MODELO, dispositivo)
-    modelo = SentenceTransformer(MODELO, device=dispositivo)
+    modelo = SentenceTransformer(MODELO, device=dispositivo, revision=REVISION)
     modelo.max_seq_length = LARGO_MAXIMO
     # Un texto vacío no tiene significado: lo reemplazamos por un punto para no romper el modelo
     entrada = [PREFIJO + (t if t else ".") for t in unicos]

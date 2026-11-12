@@ -11,11 +11,20 @@ válida, aunque sea con resultados parciales.
 import argparse
 import json
 import logging
+import os
 import sys
 import traceback
+import warnings
 from pathlib import Path
 
-from pipeline import coordinacion, costo, datos, embeddings, ia, narrativas, postura, salida
+# Silenciamos barras de progreso y avisos de librerías: el log tiene que leerse fácil
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+from pipeline import coordinacion, costo, datos, embeddings, ia, narrativas, postura, salida, validar
 
 ALMACENAMIENTO = "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)"
 
@@ -96,9 +105,15 @@ def configurar_log(ruta_log: Path):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S",
                         handlers=[logging.StreamHandler(sys.stdout),
                                   logging.FileHandler(ruta_log, mode="w", encoding="utf-8")])
-    # Las librerías de descarga de modelos anotan cada pedido web: los silenciamos
-    for ruidosa in ("httpx", "huggingface_hub", "sentence_transformers", "urllib3"):
-        logging.getLogger(ruidosa).setLevel(logging.WARNING)
+    # Las librerías de descarga de modelos anotan cada pedido web: los descartamos
+    # con un filtro en los "handlers" (así no importa si la librería cambia su nivel).
+    ruidosas = ("httpx", "huggingface_hub", "sentence_transformers", "urllib3", "transformers")
+
+    def filtro(registro):
+        return registro.levelno >= logging.WARNING or not registro.name.startswith(ruidosas)
+
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(filtro)
 
 
 def main():
@@ -146,6 +161,13 @@ def main():
         notas += f"; etapas con error: {', '.join(errores)} (ver cache/reportes/log.txt)"
     info = costo.escribir_costo(args.entrega, crono, len(estado["comentario_ids"]), ALMACENAMIENTO, notas)
 
+    # Validación final: ¿los 4 archivos cumplen el formato oficial?
+    problemas = validar.validar_entrega(args.entrega, estado["comentario_ids"], estado["cuenta_ids"])
+    if problemas:
+        for p in problemas:
+            logging.error("✖ Formato de entrega: %s", p)
+    else:
+        logging.info("✔ Formato de entrega validado (4 archivos, columnas y valores correctos)")
     logging.info("✔ Entrega en %s: %s | %.1f s", args.entrega, resumen, info["segundos"])
     if errores:
         logging.warning("Hubo errores en: %s", ", ".join(errores))

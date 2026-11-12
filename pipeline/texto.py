@@ -38,7 +38,9 @@ def para_embeddings(texto: str) -> str:
 def para_comparar(texto: str) -> str:
     """Normalización fuerte, para detectar textos casi idénticos."""
     t = para_embeddings(texto)
+    t = t.replace("ñ", "\x00")                                     # protegemos la ñ...
     t = unicodedata.normalize("NFD", t)
     t = "".join(c for c in t if unicodedata.category(c) != "Mn")   # saca acentos
+    t = t.replace("\x00", "ñ")                                     # ...y la devolvemos
     t = _NO_ALFANUM.sub(" ", t)
     return _ESPACIOS.sub(" ", t).strip()

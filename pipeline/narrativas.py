@@ -54,7 +54,8 @@ def _reducir_umap(vectores, carpeta_cache: Path):
     import umap
     logging.info("Narrativas: UMAP sobre %s textos (1-2 min)...", len(vectores))
     X = umap.UMAP(n_neighbors=UMAP_VECINOS, n_components=UMAP_DIMENSIONES, min_dist=0.0,
-                  metric="cosine", random_state=SEMILLA).fit_transform(vectores)
+                  metric="cosine", random_state=SEMILLA,
+                  compatibility_layout=True).fit_transform(vectores)
     ruta.parent.mkdir(parents=True, exist_ok=True)
     np.save(ruta, X)
     return X
@@ -137,7 +138,9 @@ def _frases_clave(textos, textos_todos, n=6):
         return c
     adentro, total = conteo(textos), textos_todos
     puntaje = {w: f * np.log(1 + len(textos) / (1 + total.get(w, 0))) for w, f in adentro.items() if f >= 3}
-    return [w for w, _ in sorted(puntaje.items(), key=lambda x: -x[1])[:n]]
+    # Desempate alfabético: sin él, dos palabras con el mismo puntaje cambian de lugar entre
+    # corridas (Python ordena los conjuntos de palabras distinto cada vez que arranca)
+    return [w for w, _ in sorted(puntaje.items(), key=lambda x: (-x[1], x[0]))[:n]]
 
 
 PALABRAS_SEGURAS = 9       # las raíces con ≥ 9 palabras son siempre narrativa (100% en práctica)

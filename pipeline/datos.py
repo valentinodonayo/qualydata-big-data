@@ -141,22 +141,28 @@ def cargar(carpeta_datos: Path, carpeta_cache: Path):
     # --- Limpieza de cuentas y publicaciones ---------------------------------------
     con.execute("""
         CREATE OR REPLACE TABLE cuentas AS
+        WITH base AS (SELECT *, row_number() OVER () AS orden FROM crudo_cuentas)
         SELECT trim(cuenta_id) AS cuenta_id, usuario,
                TRY_CAST(fecha_creacion AS DATE) AS fecha_creacion,
                TRY_CAST(seguidores AS BIGINT) AS seguidores,
                TRY_CAST(siguiendo AS BIGINT) AS siguiendo
-        FROM crudo_cuentas
+        FROM base
         WHERE cuenta_id IS NOT NULL AND trim(cuenta_id) <> ''
-        QUALIFY row_number() OVER (PARTITION BY trim(cuenta_id)) = 1
+        -- Si una cuenta aparece repetida, gana la PRIMERA fila del archivo (siempre la misma)
+        QUALIFY row_number() OVER (PARTITION BY trim(cuenta_id) ORDER BY orden) = 1
+        -- ORDER BY fijo: DuckDB trabaja en paralelo y sin esto el orden cambia entre corridas
+        ORDER BY orden
     """)
     con.execute("""
         CREATE OR REPLACE TABLE publicaciones AS
+        WITH base AS (SELECT *, row_number() OVER () AS orden FROM crudo_publicaciones)
         SELECT trim(publicacion_id) AS publicacion_id, trim(fuente_id) AS fuente_id,
                CAST(epoch(TRY_CAST(fecha AS TIMESTAMPTZ)) AS BIGINT) AS ts,
                coalesce(titular, '') AS titular
-        FROM crudo_publicaciones
+        FROM base
         WHERE publicacion_id IS NOT NULL AND trim(publicacion_id) <> ''
-        QUALIFY row_number() OVER (PARTITION BY trim(publicacion_id)) = 1
+        QUALIFY row_number() OVER (PARTITION BY trim(publicacion_id) ORDER BY orden) = 1
+        ORDER BY orden
     """)
     calidad["cuentas"] = con.execute("SELECT count(*) FROM cuentas").fetchone()[0]
     calidad["publicaciones"] = con.execute("SELECT count(*) FROM publicaciones").fetchone()[0]
