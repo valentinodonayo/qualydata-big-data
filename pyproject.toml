@@ -3,6 +3,7 @@ name = "qualydata"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=2.8.0",
     "duckdb>=2.0.0",
     "hdbscan>=0.8.44",
     "igraph>=1.0.0",

@@ -15,7 +15,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from pipeline import costo, datos, embeddings, hilos, narrativas, salida
+from pipeline import costo, datos, embeddings, ia, narrativas, postura, salida
 
 ALMACENAMIENTO = "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)"
 
@@ -43,22 +43,32 @@ def etapa_narrativas(estado, args):
     # Clasificador de ruido entrenado con la verdad de práctica (si no existe, se usa una regla simple)
     ruta_modelo = Path(__file__).parent / "modelos" / "ruido.json"
     modelo_ruido = json.loads(ruta_modelo.read_text(encoding="utf-8")) if ruta_modelo.exists() else None
-    narrativa, tabla, raiz = narrativas.detectar(com, estado["emb"], estado["emb_indice"], args.cache,
-                                                 modelo_ruido=modelo_ruido)
+    narrativa, tabla, raiz, extra = narrativas.detectar(com, estado["emb"], estado["emb_indice"],
+                                                        args.cache, modelo_ruido=modelo_ruido)
     estado["narrativa"], estado["tabla_narrativas"], estado["raiz"] = narrativa, tabla, raiz
+    estado["extra_narrativas"] = extra
     estado["narrativas"] = [{"narrativa": n["narrativa"], "titulo": n["titulo"],
                              "frases_clave": n["frases_clave"],
                              "fecha_origen": salida.ts_a_iso(n["origen_ts"])} for n in tabla]
 
 
 def etapa_postura(estado, args):
-    """Etapa 4b (provisoria): raíces = "apoya"; respuestas = regla del largo. Mejora en el bloque 4."""
+    """Etapa 4b: dos bandos por narrativa + IA (o respaldo) decide cuál apoya; hilos completan."""
     com = estado["datos"]["comentarios"]
-    ids = com["comentario_id"].tolist()
-    raices = {c for c in ids if estado["raiz"][c] == c and c in estado["narrativa"]}
-    postura = hilos.posturas_por_hilo(ids, com["respuesta_a"].tolist(), com["texto"].tolist(),
-                                      {c: "apoya" for c in raices})
-    estado["postura"] = {c: p for c, p in postura.items() if c in estado["narrativa"] and p}
+    extra = estado["extra_narrativas"]
+    bando_com, resumen = postura.calcular_bandos(com, estado["emb"], estado["emb_indice"], extra)
+    if args.sin_ia:
+        resumen_ia = ({k: (0 if v["tamano"][0] >= v["tamano"][1] else 1) for k, v in resumen.items()}, {})
+        logging.info("IA: desactivada con --sin-ia; uso el bando más grande")
+    else:
+        resumen_ia = ia.decidir(resumen, estado["crono"])
+    apoya_es, titulos = resumen_ia
+    estado["postura"] = postura.posturas(com, bando_com, apoya_es, extra)
+    # Si la IA puso títulos más claros, reemplazan a los provisorios
+    for n in estado["narrativas"]:
+        if n["narrativa"] in titulos:
+            n["titulo"] = titulos[n["narrativa"]]["titulo"]
+            n["frases_clave"] = "|".join(titulos[n["narrativa"]]["frases_clave"])
 
 
 def etapa_coordinacion(estado, args):
@@ -95,11 +105,13 @@ def main():
                     help="Carpeta donde se escriben los resultados")
     ap.add_argument("--cache", type=Path, default=Path("cache"),
                     help="Carpeta para la base DuckDB, Parquet y cálculos guardados")
+    ap.add_argument("--sin-ia", action="store_true",
+                    help="No llamar a Claude (usa el respaldo: el bando más grande apoya)")
     args = ap.parse_args()
 
     configurar_log(args.cache / "reportes" / "log.txt")
     crono = costo.Cronometro()
-    estado = {}       # acá cada etapa deja sus resultados para las siguientes
+    estado = {"crono": crono}   # acá cada etapa deja sus resultados para las siguientes
     errores = []      # nombres de las etapas que fallaron
 
     for nombre, funcion in ETAPAS:
@@ -123,7 +135,8 @@ def main():
         narrativa=estado.get("narrativa"), postura=estado.get("postura"),
         grupo=estado.get("grupo"), narrativas=estado.get("narrativas"))
 
-    notas = f"embeddings locales ({embeddings.MODELO}); narrativas y bots: en construcción"
+    notas = (f"embeddings locales ({embeddings.MODELO}); narrativas: micro-grupos + votos de hilos + Leiden; "
+             f"IA ({ia.MODELO}) solo 1 llamada por narrativa para decidir el bando que apoya y el título")
     if errores:
         notas += f"; etapas con error: {', '.join(errores)} (ver cache/reportes/log.txt)"
     info = costo.escribir_costo(args.entrega, crono, len(estado["comentario_ids"]), ALMACENAMIENTO, notas)

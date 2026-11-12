@@ -205,7 +205,7 @@ def _filtrar_ruido(final, com, emb, emb_indice, pos_padre, modelo_ruido):
 
 def detectar(com: pd.DataFrame, emb, emb_indice, carpeta_cache: Path, modelo_ruido=None,
              solo_sin_filtrar=False):
-    """Devuelve (narrativa_por_comentario, tabla_narrativas, raiz_por_comentario).
+    """Devuelve (narrativa_por_comentario, tabla_narrativas, raiz_por_comentario, extra).
 
     com: comentarios limpios (comentario_id, respuesta_a, texto, ts, ...)
     emb, emb_indice: salida de embeddings.calcular()
@@ -271,4 +271,7 @@ def detectar(com: pd.DataFrame, emb, emb_indice, carpeta_cache: Path, modelo_rui
                       "ejemplos": [textos[i] for i in miembros[np.argsort(-sims)[:30]]]})
     logging.info("Narrativas: %s narrativas, %.1f%% de comentarios como ruido",
                  len(tabla), 100 * (1 - len(narrativa) / max(len(ids), 1)))
-    return narrativa, tabla, raiz
+    # Datos internos que necesita la etapa de postura (micro-grupos y padres)
+    extra = {"micro_com": micro_com, "pos_padre": pos_padre, "corta": corta,
+             "narr_num": np.array([nombre.get(k, "") for k in final], dtype=object)}
+    return narrativa, tabla, raiz, extra

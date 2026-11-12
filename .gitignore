@@ -17,6 +17,8 @@ cache/
 # Claves y secretos: NUNCA al repo
 .env
 .env.*
+# ...salvo el ejemplo, que no tiene ninguna clave real
+!.env.example
 
 # Basura del sistema operativo
 .DS_Store

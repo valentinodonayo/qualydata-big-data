@@ -39,12 +39,16 @@ def main():
     ap.add_argument("--datos", type=Path, default=RAIZ / "datos/practica")
     ap.add_argument("--entrega", type=Path, default=RAIZ / "salida/practica")
     ap.add_argument("--sin-correr", action="store_true", help="Solo puntuar una entrega ya hecha")
+    ap.add_argument("--sin-ia", action="store_true", help="Correr el pipeline sin llamar a Claude")
     args = ap.parse_args()
 
     # 1) Correr el pipeline con el mismo Python que está corriendo este script
     if not args.sin_correr:
-        subprocess.run([sys.executable, str(RAIZ / "correr.py"), "--datos", str(args.datos),
-                        "--entrega", str(args.entrega)], cwd=RAIZ, check=True)
+        comando = [sys.executable, str(RAIZ / "correr.py"), "--datos", str(args.datos),
+                   "--entrega", str(args.entrega)]
+        if args.sin_ia:
+            comando.append("--sin-ia")
+        subprocess.run(comando, cwd=RAIZ, check=True)
 
     # 2) Correr el script oficial del jurado (sin tocarlo) y pedirle el resultado en JSON
     resultado_json = args.entrega / "_puntaje.json"
