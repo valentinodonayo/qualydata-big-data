@@ -1,0 +1,17 @@
+{
+  "comentarios_procesados": 150000,
+  "segundos": 17.97,
+  "tokens_ia": 0,
+  "usd_ia": 0.0,
+  "usd_por_mil_comentarios": 0.0,
+  "hardware": "arm64, 10 núcleos, 16 GB RAM, sin GPU dedicada",
+  "almacenamiento": "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)",
+  "notas": "embeddings locales (intfloat/multilingual-e5-small); narrativas: micro-grupos + votos de hilos + Leiden; IA (claude-haiku-5-5) solo 1 llamada por narrativa para decidir el bando que apoya y el título; coordinación: copias + llegadas juntas + respuestas + comunidades densas (Leiden), sin IA",
+  "segundos_por_etapa": {
+    "datos": 0.63,
+    "embeddings": 0.94,
+    "narrativas": 12.53,
+    "postura": 0.38,
+    "coordinacion": 3.36
+  }
+}

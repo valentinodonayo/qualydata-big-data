@@ -13,6 +13,7 @@ salida/
 
 # Cache de cálculos caros (embeddings, etc.): se regenera sola
 cache/
+cache_*/
 
 # Claves y secretos: NUNCA al repo
 .env
