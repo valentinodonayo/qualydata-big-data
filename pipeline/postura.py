@@ -16,11 +16,14 @@ Entonces, dentro de cada narrativa:
 """
 import logging
 import os
+import re as _re
 from collections import defaultdict
 
 import numpy as np
 
 from pipeline import hilos
+
+_REPETIDAS = _re.compile(r"(\w)\1{2,}")      # "precioooo" -> "precio"
 
 
 def _dos_bandos(nodos, aristas):
@@ -63,6 +66,46 @@ def _dos_bandos(nodos, aristas):
         if not cambio:
             break
     return bando
+
+
+def _clave_texto(t):
+    """Texto reducido a lo esencial para detectar casi-copias: minúsculas, sin signos ni emojis,
+    y sin letras repetidas ("nadaaaa" = "nada")."""
+    t = _REPETIDAS.sub(r"\1", str(t).lower())
+    return " ".join(_re.sub(r"[^a-záéíóúüñ0-9 ]", " ", t).split())
+
+
+def _ejemplos_variados(pos, micro, textos, emb, emb_indice, cuantos=12, min_palabras=8):
+    """Ejemplos VARIADOS de un bando: el comentario más típico de cada micro-grupo.
+
+    pos: posiciones de las raíces del bando. Cada micro-grupo es una forma distinta de decir algo;
+    se recorren del más grande al más chico tomando un ejemplo de cada uno (y una segunda vuelta
+    si hay pocos micro-grupos), salteando casi-copias. Todo con desempates fijos (tamaño, texto)
+    para que salgan los mismos ejemplos en cualquier máquina.
+    """
+    por_micro = defaultdict(list)
+    for i in pos:
+        if micro[i] >= 0 and len(textos[i].split()) >= min_palabras:
+            por_micro[int(micro[i])].append(int(i))
+    candidatos = []          # por micro-grupo: sus textos ordenados del más típico al menos típico
+    for miembros in por_micro.values():
+        V = emb[emb_indice[np.array(miembros)]]
+        centro = V.mean(0)
+        orden = sorted(range(len(miembros)), key=lambda j: (-round(float(V[j] @ centro), 4), textos[miembros[j]]))
+        candidatos.append((len(miembros), [textos[miembros[j]] for j in orden]))
+    candidatos.sort(key=lambda c: (-c[0], c[1][0]))
+    elegidos, vistos = [], set()
+    for vuelta in range(2):
+        for _, lista in candidatos:
+            if len(elegidos) == cuantos:
+                break
+            # en la 1ª vuelta el más típico; en la 2ª, el siguiente que no sea casi-copia
+            for t in lista[:1] if vuelta == 0 else lista[1:40]:
+                if _clave_texto(t) not in vistos:
+                    vistos.add(_clave_texto(t))
+                    elegidos.append(t)
+                    break
+    return elegidos
 
 
 def calcular_bandos(com, emb, emb_indice, extra):
@@ -130,7 +173,12 @@ def calcular_bandos(com, emb, emb_indice, extra):
                         break
             ejemplos.append(elegidos)
         tamano = [int(((bando_com == b) & en_narr).sum()) for b in (0, 1)]
-        resumen[etiqueta] = {"tamano": tamano, "ejemplos": ejemplos}
+        # "ejemplos" (los más centrales) suelen ser 12 copias casi iguales de UNA misma frase: sirven
+        # para reconocer el bando en la caché, pero le muestran poco a la IA. "variados" son los que
+        # lee la IA: una frase por cada forma distinta de decirlo (micro-grupo) dentro del bando.
+        variados = [_ejemplos_variados(np.where(en_narr & es_raiz & (bando_com == b))[0], micro, textos,
+                                       emb, emb_indice) for b in (0, 1)]
+        resumen[etiqueta] = {"tamano": tamano, "ejemplos": ejemplos, "variados": variados}
     logging.info("Postura: bandos armados en %s narrativas", len(resumen))
     return bando_com, resumen
 
@@ -154,11 +202,8 @@ def posturas(com, bando_com, apoya_es, extra):
     return resultado
 
 
-import re as _re
-
 _LIMPIAR = _re.compile(r"@\w+|#\w+|https?://\S+|www\.\S+")
 _PEDAZOS = _re.compile(r"[.:,;!?]")
-_REPETIDAS = _re.compile(r"(\w)\1{2,}")      # "precioooo" -> "precio"
 
 
 def titulos_representativos(com, emb, emb_indice, extra, postura_com, min_palabras=6, max_palabras=20):
@@ -196,3 +241,33 @@ def titulos_representativos(com, emb, emb_indice, extra, postura_com, min_palabr
             t = t.lower()
         titulos[etiqueta] = (t[0].upper() + t[1:])[:120]
     return titulos
+
+
+def bando_de_operaciones(com, bando_com, extra, grupo, min_comentarios=10):
+    """Señal extra para decidir qué bando apoya: ¿de qué lado escriben las cuentas coordinadas?
+
+    En práctica, las 3 campañas coordinadas escriben A FAVOR de la narrativa que empujan
+    (verdad/campanas.csv). Entonces, si una operación concentra sus comentarios en una narrativa,
+    el bando donde caen esos comentarios es un buen candidato a ser el que "apoya".
+
+    grupo: {cuenta_id: "op01", ...} (lo que devuelve coordinacion.detectar).
+    Devuelve {narrativa: [comentarios en bando 0, comentarios en bando 1]} contando, para cada
+    operación, solo SU narrativa principal (donde más raíces escribió) y solo si escribió ahí
+    al menos `min_comentarios` raíces. Las narrativas sin operación no aparecen.
+    """
+    narr = extra["narr_num"]
+    cuentas = com["cuenta_id"].tolist()
+    # Por operación: cuántas raíces (con bando) tiene en cada narrativa y bando
+    conteo = defaultdict(lambda: defaultdict(lambda: [0, 0]))
+    for i in np.where(bando_com >= 0)[0]:
+        op = grupo.get(cuentas[i])
+        if op:
+            conteo[op][narr[i]][int(bando_com[i])] += 1
+    votos = {}
+    for op in sorted(conteo):
+        principal = max(sorted(conteo[op]), key=lambda k: sum(conteo[op][k]))
+        n0, n1 = conteo[op][principal]
+        if n0 + n1 >= min_comentarios:
+            anterior = votos.get(principal, [0, 0])
+            votos[principal] = [anterior[0] + n0, anterior[1] + n1]
+    return votos
