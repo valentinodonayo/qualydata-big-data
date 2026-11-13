@@ -89,6 +89,12 @@ def construir_datos(com, cuentas, narrativa, postura, grupo, narrativas, operaci
     dias = pd.date_range(_dia(t0), _dia(t1), freq="D").strftime("%Y-%m-%d").tolist()
     con_fecha = con_fecha.assign(dia=con_fecha["ts"].map(_dia))
 
+    # Narrativa principal de cada operación: donde escribe la mayoría de sus comentarios con narrativa.
+    # Una operación "empuja" solo esa. El resto de su actividad es de cobertura (comenta un poco de
+    # todo para parecer genuina) y mostrarla confundía: todas las filas parecían empujadas.
+    con_op = con_fecha[(con_fecha["op"] != "") & (con_fecha["narr"] != "")]
+    principal_de = {o: Counter(g["narr"]).most_common(1)[0][0] for o, g in con_op.groupby("op")}
+
     filas = []
     for n in narrativas:
         etiqueta = n["narrativa"]
@@ -96,7 +102,7 @@ def construir_datos(com, cuentas, narrativa, postura, grupo, narrativas, operaci
         if miembros.empty:
             continue
         por_dia = miembros.groupby("dia").size().reindex(dias, fill_value=0).astype(int).tolist()
-        ops = Counter(miembros.loc[miembros["op"] != "", "op"])
+        ops = Counter(o for o in miembros["op"] if o and principal_de.get(o) == etiqueta)
         origen = n.get("fecha_origen", "")
         try:
             origen_ts = datetime.fromisoformat(origen).timestamp()
