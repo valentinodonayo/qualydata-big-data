@@ -93,7 +93,8 @@ def etapa_postura(estado, args):
 
 def etapa_coordinacion(estado, args):
     """Etapa 5: cuentas coordinadas (copias, llegadas juntas, respuestas y red de respuestas)."""
-    estado["grupo"], estado["operaciones"] = coordinacion.detectar(estado["datos"]["comentarios"])
+    estado["grupo"], estado["operaciones"] = coordinacion.detectar(estado["datos"]["comentarios"],
+                                                                   estado["datos"]["cuentas"])
     # Guardamos el resumen de operaciones para el dashboard (bloque 7)
     ruta = args.cache / "reportes" / "operaciones.json"
     ruta.parent.mkdir(parents=True, exist_ok=True)

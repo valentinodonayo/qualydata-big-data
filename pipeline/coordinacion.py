@@ -25,6 +25,12 @@ que se comporta junto más de lo que el azar explicaría. Buscamos 4 tipos de se
      por coordinación) y si coincidió (en franjas de 60 min) en >= 2 publicaciones distintas.
      Se repite hasta 3 veces: una cuenta recién sumada puede delatar a otra. Rescata cuentas de "cobertura" con textos variados.
 
+  H) Tanda de creación (al final): si casi todos los miembros de una operación se crearon en
+     pocos días (5% a 95% de las fechas en <= 10 días) y con la misma FORMA de usuario (letras y
+     cantidad de dígitos, ej. "palabra+4 dígitos", en >= 80% de los miembros), se suma la cuenta
+     no marcada creada en esa ventana (+-1 día) con esa misma forma. Si encaja en dos operaciones,
+     va a la que comparte más publicaciones con ella. Cuentas sin fecha o sin usuario: se ignoran.
+
   D) Red de respuestas "con ciclos": en una charla normal las respuestas forman un
      árbol (cada uno contesta a uno). Un grupo coordinado se responde entre todos y
      forma una red llena de ciclos. Con Leiden buscamos comunidades en el grafo de
@@ -66,6 +72,9 @@ DENSIDAD_RAREZA = 0.03         # capa G: ...y ese puntaje dividido las publicaci
 MIN_PUBLICACIONES_RAREZA = 2    # capa G: publicaciones distintas en común (franjas de 60 min)
 PASADAS_RAREZA = 3              # capa G: se repite con las operaciones ya agrandadas (tope)
 FRANJA_LARGA_S = 60 * 60       # capa G: franja para contar publicaciones distintas en común
+TANDA_MAX_DIAS = 10            # capa H: ancho máximo de la ventana de creación (percentiles 5-95)
+TANDA_FORMA_MIN = 0.8          # capa H: fracción de miembros con la forma de usuario dominante
+TANDA_MIN_MIEMBROS = 5         # capa H: miembros con metadata para evaluar una tanda
 SEMILLA = int(os.environ.get("QUALY_SEMILLA", "42"))   # fija; se cambia solo para medir estabilidad
 
 CUENTA_DESCONOCIDA = "desconocida"   # la pone datos.py cuando falta la cuenta: no se mezcla
@@ -285,7 +294,50 @@ def _llegadas_raras(com, grupo):
     return nuevas
 
 
-def detectar(com: pd.DataFrame):
+def _forma_usuario(usuario):
+    """'trabajoorgullo8302' -> 'a9999': letras = 'a', cada dígito = '9', el resto igual."""
+    u = re.sub(r"\d", "9", str(usuario).lower())
+    return re.sub(r"[a-zñáéíóú]+", "a", u)
+
+
+def _tanda_de_creacion(com, cuentas, grupo):
+    """Capa H: cuentas creadas en la misma tanda (fechas y forma de usuario) que una operación."""
+    meta = cuentas[["cuenta_id", "usuario", "fecha_creacion"]].copy()
+    meta["fecha"] = pd.to_datetime(meta["fecha_creacion"], errors="coerce")
+    meta = meta[meta["fecha"].notna() & meta["usuario"].fillna("").astype(str).str.strip().ne("")]
+    meta = meta.drop_duplicates("cuenta_id")
+    if meta.empty:
+        return {}
+    meta["forma"] = meta["usuario"].map(_forma_usuario)
+    meta["op"] = meta["cuenta_id"].map(grupo)
+    tandas = {}
+    for op, m in meta[meta["op"].notna()].groupby("op"):
+        if len(m) < TANDA_MIN_MIEMBROS:
+            continue
+        desde, hasta = m["fecha"].quantile(0.05), m["fecha"].quantile(0.95)
+        formas = m["forma"].value_counts()
+        if (hasta - desde).days <= TANDA_MAX_DIAS and formas.iloc[0] / len(m) >= TANDA_FORMA_MIN:
+            tandas[op] = (desde - pd.Timedelta(days=1), hasta + pd.Timedelta(days=1), formas.index[0])
+    if not tandas:
+        return {}
+    pubs_de = com.groupby("cuenta_id")["publicacion_id"].agg(set).to_dict()
+    pubs_op = {op: set().union(*[pubs_de.get(c, set()) for c, g in grupo.items() if g == op]) for op in tandas}
+    nuevas = {}
+    for c, fecha, forma in zip(meta["cuenta_id"], meta["fecha"], meta["forma"]):
+        if c in grupo or c == CUENTA_DESCONOCIDA:
+            continue
+        candidatas = [op for op, (desde, hasta, f) in tandas.items() if desde <= fecha <= hasta and forma == f]
+        if candidatas:
+            mias = pubs_de.get(c, set())
+            # int(): la columna "op" queda como número decimal porque tiene vacíos (NaN)
+            nuevas[c] = int(min(candidatas, key=lambda op: (-len(mias & pubs_op[op]), op)))
+    if nuevas:
+        logging.info("Coordinación (capa H): %s cuentas se suman por haberse creado en la tanda de una operación",
+                     len(nuevas))
+    return nuevas
+
+
+def detectar(com: pd.DataFrame, metadata_cuentas: pd.DataFrame = None):
     """Devuelve (grupo, resumen).
 
     grupo:   {cuenta_id: "op01", ...} solo para las cuentas marcadas como coordinadas
@@ -322,6 +374,13 @@ def detectar(com: pd.DataFrame):
         for c, i in nuevas.items():
             operaciones[i][0].add(c)
             operaciones[i][1].add("llegadas raras")
+
+    # Capa H: tanda de creación (solo si hay metadata de cuentas)
+    if metadata_cuentas is not None and not metadata_cuentas.empty:
+        provisorio = {c: i for i, (cs, _) in enumerate(operaciones) for c in sorted(cs)}
+        for c, i in _tanda_de_creacion(com, metadata_cuentas, provisorio).items():
+            operaciones[i][0].add(c)
+            operaciones[i][1].add("tanda de creación")
 
     # Etiquetas op01, op02... de la operación más grande a la más chica
     operaciones.sort(key=lambda x: -len(x[0]))
