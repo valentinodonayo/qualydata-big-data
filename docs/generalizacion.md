@@ -5,25 +5,25 @@ simulamos esa situación con el set de práctica y medimos todo con el script of
 Todo se corre con un comando (`uv run python evaluacion/generalizacion.py`, tarda varios minutos) y
 los números quedan en [`experimentos/generalizacion.csv`](../experimentos/generalizacion.csv).
 
-Esta tabla se regeneró el 13/11 con todo lo de hoy integrado (ruido por vecinos en hilos y capa G de
-coordinación) **menos la IA**: todas las corridas usan `--sin-ia`, así que la polaridad de cada
+Esta tabla se regeneró el 13/11 con todo lo de hoy integrado (ruido por vecinos en hilos y, en coordinación, capa G,
+filtro de par único y capa H de tanda de creación) **menos la IA**: todas las corridas usan `--sin-ia`, así que la polaridad de cada
 narrativa la decide "el bando más grande".
 
 ## Resultados (sin IA)
 
 | Experimento | Narrativas /30 | B-cubed | Ruido F1 | Postura F1 | Origen | Coordinación /25 | Total /55 |
 |---|---|---|---|---|---|---|---|
-| **Referencia**: práctica completa | 29,23 | 1,000 | 1,000 | 0,872 | 1,00 | 23,99 | 53,22 |
+| **Referencia**: práctica completa | 29,23 | 1,000 | 1,000 | 0,872 | 1,00 | 24,64 | 53,87 |
 | Tema afuera: **colectivo** | 25,79 | 1,000 | 1,000 | 0,298 | 1,00 | (ver abajo) | — |
 | Tema afuera: **hospital** | 30,00 | 1,000 | 1,000 | 0,999 | 1,00 | (ver abajo) | — |
-| Tema afuera: **litio** | 29,83 | 0,989 | 1,000 | 0,999 | 1,00 | 24,36 | 54,19 |
-| Solo los **primeros 10 días** | 29,57 | 0,996 | 1,000 | 0,938 | 1,00 | 23,23 | 52,80 |
-| Semilla 1 | 28,62 | 1,000 | 1,000 | 0,770 | 1,00 | 23,77 | 52,39 |
-| Semilla 2 | 29,23 | 1,000 | 1,000 | 0,872 | 1,00 | 24,06 | 53,29 |
-| Semilla 3 | 29,22 | 0,999 | 1,000 | 0,872 | 1,00 | 23,41 | 52,63 |
-| **Datos sucios** | 28,36 | 0,989 | 0,985 | 0,766 | 1,00 | 23,99 | 52,35 |
+| Tema afuera: **litio** | 29,83 | 0,989 | 1,000 | 0,999 | 1,00 | 24,72 | 54,55 |
+| Solo los **primeros 10 días** | 29,57 | 0,996 | 1,000 | 0,938 | 1,00 | 24,86 | 54,43 |
+| Semilla 1 | 28,62 | 1,000 | 1,000 | 0,770 | 1,00 | 24,42 | 53,04 |
+| Semilla 2 | 29,23 | 1,000 | 1,000 | 0,872 | 1,00 | 24,72 | 53,95 |
+| Semilla 3 | 29,22 | 0,999 | 1,000 | 0,872 | 1,00 | 24,34 | 53,56 |
+| **Datos sucios** | 28,36 | 0,989 | 0,985 | 0,766 | 1,00 | 24,64 | 53,00 |
 
-Con IA, la práctica completa da 53,98 (narrativas 29,99, postura 0,998). El hold-out no se corrió
+Con IA, la práctica completa da 54,63 (narrativas 29,99, postura 0,998). El hold-out no se corrió
 con IA: cada experimento arma narrativas distintas y habría que volver a preguntarle a los modelos.
 
 ### Cómo se armó cada experimento
@@ -47,8 +47,8 @@ y si marcamos a alguien que no lo es:
 | Tema afuera | Campaña que opera ahí | Cuentas marcadas | De campaña | Genuinas marcadas |
 |---|---|---|---|---|
 | colectivo | ninguna | 0 | — | **0** |
-| hospital | C3 (25 cuentas) | 24 | **24** | **0** |
-| litio | C1 (60) + C2 (30) | 88 | **87** (de 90) | 1 |
+| hospital | C3 (25 cuentas) | 36 | **36** (las de C3 y cuentas de las otras campañas que comentan ahí de cobertura) | **0** |
+| litio | C1 (60) + C2 (30) | 90 | **89** (de 90) | 1 |
 
 ## Qué dicen los números
 
@@ -68,10 +68,10 @@ y si marcamos a alguien que no lo es:
    fila sube 6 × (1 − postura F1). Elegir bien la polaridad es justo lo que hace la IA: en la
    práctica completa acierta 13 de 13 narrativas y lleva la postura de 0,872 a 0,998.
 5. **La coordinación no inventa operaciones:** en el tema sin campañas no marca a nadie, y en hospital
-   y litio la precisión es de 0,99 a 1,00. Con otras semillas la precisión baja algo (0,956 con la
-   semilla 1 y 0,931 con la semilla 3; 0,991 con la 2).
-6. **Semillas:** el total sin IA varía entre 52,39 y 53,29. La entrega usa siempre la semilla 42.
-7. **Datos sucios:** el pipeline no se cae. El total (52,35) baja contra la referencia (53,22) por la
+   y litio la precisión es de 0,99 a 1,00. Con otras semillas la precisión baja algo (0,966 con la
+   semilla 1 y 0,942 con la semilla 3; 1,000 con la 2).
+6. **Semillas:** el total sin IA varía entre 53,04 y 53,95. La entrega usa siempre la semilla 42.
+7. **Datos sucios:** el pipeline no se cae. El total (53,00) baja contra la referencia (53,87) por la
    postura sin IA; agrupamiento, ruido y coordinación casi no se mueven.
 
 ## Hiperparámetros: ¿salen de los datos o de práctica?
