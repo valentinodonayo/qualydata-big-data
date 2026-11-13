@@ -53,6 +53,7 @@ FRANJA_S = 15 * 60             # capa B: tamaño de la franja de tiempo
 MAX_CUENTAS_FRANJA = 30        # capa B: momentos con más gente no cuentan
 MIN_PUBLICACIONES = 3          # par: coincidir en al menos 3 publicaciones distintas
 MIN_FRACCION = 0.3             # par: ...y que sea >= 30% de la actividad de la menos activa
+FRACCION_PROPIA_UN_VINCULO = 0.1   # par único que es < 10% de la actividad de la cuenta: se suelta
 MIN_CUENTAS_GRUPO = 5          # un grupo necesita 5 cuentas o más
 RESOLUCION_RESPUESTAS = 0.05   # capa D: resolución de Leiden (CPM): comunidades chicas y densas
 MIN_CONEXIONES_POR_CUENTA = 1.6  # capa D: un árbol tiene ~1; los grupos coordinados, 2 o más
@@ -138,6 +139,15 @@ def _grupos_por_pares(com, pares):
             continue   # coinciden poco comparado con todo lo que comentan: casualidad
         vecinos[a].add(b)
         vecinos[b].add(a)
+    # Una cuenta MUY activa que solo se conecta por UN par, y ese par es una parte mínima de lo que
+    # comenta (< FRACCION_PROPIA_UN_VINCULO), coincide por volumen, no por coordinación: se suelta.
+    for c in sorted(vecinos):
+        if len(vecinos[c]) == 1:
+            (otra,) = vecinos[c]
+            par = (c, otra) if c < otra else (otra, c)
+            if len(pares[par]) / publicaciones_de[c] < FRACCION_PROPIA_UN_VINCULO:
+                vecinos[c].discard(otra)
+                vecinos[otra].discard(c)
 
     # Componentes conexas: recorremos la red y juntamos a todos los que se tocan
     grupos, visto = [], set()
