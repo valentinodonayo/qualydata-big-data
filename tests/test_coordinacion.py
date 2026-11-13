@@ -62,3 +62,29 @@ def test_adhesion_por_hashtag_propio():
     assert grupo.get("rezagada") == grupo["bot0"]
     assert "comun" not in grupo and not any(c.startswith("vecino") for c in grupo)
     assert "adhesión" in resumen[0]["capas"]
+
+
+# ---------------- Capa G: llegadas raras ----------------
+
+def test_llegadas_raras_suma_la_cuenta_de_cobertura_y_no_la_muy_activa():
+    """'cobertura' llega con 2 miembros en momentos tranquilos de 4 publicaciones -> se suma.
+    'activa' coincide con miembros en 4 publicaciones, pero siempre en momentos con mucha gente
+    y comentando en 200 publicaciones -> su puntaje es bajo y su densidad mínima: no se suma."""
+    filas, i = [], 0
+    grupo = {"m1": 0, "m2": 0}
+    for k in range(4):
+        pub = f"q{k}"
+        t0 = BASE + k * 86400
+        for cuenta, dt in (("m1", 0), ("m2", 60), ("cobertura", 120)):
+            i += 1
+            filas.append(_fila(i, pub, cuenta, t0 + dt, "texto"))
+        # momento concurrido en otra publicación: miembros + 'activa' + 25 personas
+        pub2 = f"r{k}"
+        for cuenta in ["m1", "activa"] + [f"gente{g}" for g in range(25)]:
+            i += 1
+            filas.append(_fila(i, pub2, cuenta, t0 + 7200, "texto"))
+    for g in range(200):              # 'activa' comenta en muchísimas publicaciones
+        i += 1
+        filas.append(_fila(i, f"s{g}", "activa", BASE + g * 3600 + 30 * 86400, "texto"))
+    nuevas = coordinacion._llegadas_raras(pd.DataFrame(filas), grupo)
+    assert nuevas == {"cobertura": 0}
