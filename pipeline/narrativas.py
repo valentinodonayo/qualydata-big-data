@@ -17,7 +17,8 @@ Idea en 4 pasos (todo sin saber de antemano cuántas narrativas hay):
    forman parte de una discusión: no responden ni reciben respuestas.
    Un micro-grupo sin ningún voto queda como ruido. Y al final (paso 5), cada
    comentario suelto (raíz sin respuestas) se decide mirando a sus ~50
-   comentarios más parecidos: si NINGUNO participa de un hilo, es ruido.
+   comentarios más parecidos: si casi ninguno participa de un hilo (menos del
+   10% de la tasa normal del set), es ruido.
 
 4. HILOS COMPLETOS. Cada hilo (raíz + todas sus respuestas) lleva la narrativa
    que tiene la mayoría de sus comentarios con contenido. Así las respuestas
