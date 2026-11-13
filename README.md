@@ -72,7 +72,7 @@ Set de práctica, con el script oficial del jurado (`evaluacion/puntuar.py`):
 |---|---|---|---|
 | Línea base oficial | 12,83 | 4,12 | 16,95 |
 | Este pipeline, sin IA (`--sin-ia`) | 29,23 | 24,72 | 53,95 |
-| **Este pipeline, con IA** (como la entrega) | **29,99** | **24,72** | **54,71** |
+| **Este pipeline, con IA** (como la entrega) | **29,99** | **24,72** | **54,72** |
 
 Detalle en práctica:
 
@@ -87,7 +87,7 @@ Detalle en práctica:
 
 Evolución: ayer el pipeline sacaba 51,98. Hoy sumaron la capa G de coordinación (52,99), el ruido
 por vecinos en hilos (53,22), la IA con votación (53,98), la segunda pasada de la capa G (54,27) y el
-filtro de par único más la capa H de tanda de creación (54,63) y el filtro de la red de respuestas (54,71). Historial de cada prueba en
+filtro de par único más la capa H de tanda de creación (54,63) y el filtro de la red de respuestas (54,72). Historial de cada prueba en
 [`experimentos/runs.csv`](experimentos/runs.csv).
 
 **Set final** (`entrega/`, 150.000 comentarios, sin respuesta correcta):

@@ -37,7 +37,7 @@ Toma el set del desafío y responde, sin intervención manual, las dos preguntas
 
 ### Resultados
 
-**Set de práctica, puntaje automático con el script oficial: 54,71 de 55** (narrativas 29,99 de 30; coordinación 24,72 de 25). Sin IA saca 53,95. La línea base del desafío saca 16,95.
+**Set de práctica, puntaje automático con el script oficial: 54,72 de 55** (narrativas 29,99 de 30; coordinación 24,72 de 25). Sin IA saca 53,95. La línea base del desafío saca 16,95.
 
 | Medida | Valor |
 |---|---|
