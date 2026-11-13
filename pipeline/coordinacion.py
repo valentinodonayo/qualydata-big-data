@@ -36,7 +36,8 @@ que se comporta junto más de lo que el azar explicaría. Buscamos 4 tipos de se
      forma una red llena de ciclos. Con Leiden buscamos comunidades en el grafo de
      "quién responde a quién" y marcamos las que tienen >= 1,6 conexiones por cuenta
      (un árbol tiene casi exactamente 1). Esta capa atrapa a las campañas de textos
-     variados, que A y B no ven.
+     variados, que A y B no ven. De cada comunidad quedan solo las cuentas con >= 2 respuestas
+     intercambiadas adentro: la que cruzó UNA sola respuesta con un miembro es charla casual.
 
 Todo es conteo y grafos: no usa IA y tarda pocos segundos con 200.000 comentarios.
 """
@@ -62,6 +63,7 @@ MIN_FRACCION = 0.3             # par: ...y que sea >= 30% de la actividad de la 
 FRACCION_PROPIA_UN_VINCULO = 0.1   # par único que es < 10% de la actividad de la cuenta: se suelta
 MIN_CUENTAS_GRUPO = 5          # un grupo necesita 5 cuentas o más
 RESOLUCION_RESPUESTAS = 0.05   # capa D: resolución de Leiden (CPM): comunidades chicas y densas
+MIN_RESPUESTAS_RED = 2          # capa D: respuestas intercambiadas dentro de la comunidad para quedarse
 MIN_CONEXIONES_POR_CUENTA = 1.6  # capa D: un árbol tiene ~1; los grupos coordinados, 2 o más
 HASHTAG_MIN_USOS = 10          # capa E: un hashtag cuenta si se usó al menos 10 veces...
 HASHTAG_FRACCION_OP = 2 / 3    # ...y una mayoría clara (2 de cada 3 usos) es de UNA operación
@@ -198,9 +200,13 @@ def _grupos_por_red_de_respuestas(com):
     for comunidad in particion:
         if len(comunidad) < MIN_CUENTAS_GRUPO:
             continue
-        conexiones = grafo.subgraph(comunidad).ecount()
+        sub = grafo.subgraph(comunidad)
+        conexiones = sub.ecount()
         if conexiones / len(comunidad) >= MIN_CONEXIONES_POR_CUENTA:
-            grupos.append({nombres[i] for i in comunidad})
+            # Solo quedan las cuentas con >= MIN_RESPUESTAS_RED respuestas intercambiadas DENTRO de la
+            # comunidad: una cuenta que cruzó UNA sola respuesta con un miembro es una charla casual
+            fuerza = sub.strength(weights="weight")
+            grupos.append({nombres[comunidad[j]] for j, f in enumerate(fuerza) if f >= MIN_RESPUESTAS_RED})
             logging.info("Coordinación (capa D): comunidad de %s cuentas con %s conexiones",
                          len(comunidad), conexiones)
     return grupos
