@@ -35,13 +35,15 @@ Otros comandos:
 | `make limpiar` | Borra la cache (embeddings, UMAP, base). La próxima corrida recalcula todo |
 
 **IA opcional y reproducible.** Para cada narrativa, la IA decide cuál de los dos bandos "apoya" y
-le pone un título: 1 llamada a Claude Haiku 5.5 por narrativa (~12 en total, menos de 1 centavo). El
-orden es:
+le pone un título: 1 llamada por narrativa (~12 en total). Modelos, en este orden de preferencia:
+**Google Gemini 3.8 Flash** (`GEMINI_API_KEY`, capa gratis de Google: US$ 0, sin tarjeta) o **Claude
+Haiku 5.5** (`ANTHROPIC_API_KEY`, pago: menos de 1 centavo por corrida). El orden de decisión es:
 
 1. **Caché versionada** (`modelos/cache_ia.json`, va en el repo): si el pedido ya se hizo, se usa esa
    respuesta. Así el comando reproduce la entrega **sin clave y sin internet**.
-2. **El modelo**, si hay `ANTHROPIC_API_KEY` (en el entorno o en `.env`, ver `.env.example`). La
-   respuesta se agrega a la caché.
+2. **El modelo**, si hay `GEMINI_API_KEY` o `ANTHROPIC_API_KEY` (en el entorno o en `.env`, ver
+   `.env.example`). La respuesta se agrega a la caché. Gemini se llama de a una narrativa por vez, con
+   reintentos si la capa gratis responde "demasiados pedidos". Sin librerías nuevas (`urllib` estándar).
 3. **Respaldo sin IA** ("el bando más grande apoya"), si no hay ni caché ni clave. Se avisa en el log.
 
 `costo.json` informa el gasto de la corrida que generó cada respuesta guardada. La entrega actual se
@@ -155,7 +157,7 @@ se escribió durante el hackathon (11 al 13/11/2026), con asistencia de Claude C
 oficial y no se modificaron: `ejemplos/linea_base.py` (línea base) y `evaluacion/puntuar.py` (script
 del jurado). Librerías y modelos públicos usados: DuckDB, pandas, NumPy, PyArrow, scikit-learn,
 sentence-transformers con `intfloat/multilingual-e5-small` (MIT), umap-learn, hdbscan, igraph,
-leidenalg y el SDK de Anthropic (opcional).
+leidenalg, el SDK de Anthropic (opcional) y la API REST de Google Gemini (opcional, sin SDK).
 
 ## Límites conocidos
 

@@ -21,6 +21,7 @@ clave de API. Diagnóstico de partida: [`diagnostico.md`](diagnostico.md).
 | Cambio | Por qué | Verificación |
 |---|---|---|
 | Caché versionada de la IA (`modelos/cache_ia.json`, `pipeline/cache_ia.py`) | El jurado re-corre sin nuestra clave. Con la caché, la entrega con IA se reproduce idéntica, sin clave ni internet. | Tests sin llamar al modelo: acierto exacto, respaldo sin clave, respaldo "parecido" con bandos invertidos |
+| IA gratis: Google Gemini 3.8 Flash como primer proveedor (`GEMINI_API_KEY`), Claude Haiku queda como alternativa | La cuenta de Anthropic no tenía saldo (la API respondía "credit balance is too low"). Gemini tiene capa gratis sin tarjeta, y con la caché el jurado no necesita ninguna clave | 4 tests nuevos sin internet: elige Gemini primero, prueba otra forma del pedido si Google responde 400, guarda en la caché y reproduce sin clave, y usa el respaldo si la API falla. Práctica sin clave que funcione: 51,98 (igual) |
 | Ejemplos para la IA = las 12 raíces **más centrales** de cada bando (antes, 12 al azar) | Estables entre máquinas (GPU vs CPU cambian decimales). Si igual cambia alguno, la caché reconoce cada bando por ejemplos en común | Sin IA el resultado es idéntico (la elección de ejemplos solo afecta al pedido a la IA) |
 
 ## Por qué no se agregó una cascada NLI + LLM para la postura

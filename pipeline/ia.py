@@ -1,4 +1,9 @@
-"""Etapa de IA: Claude Haiku decide qué bando "apoya" cada narrativa y le pone título.
+"""Etapa de IA: un modelo de lenguaje decide qué bando "apoya" cada narrativa y le pone título.
+
+Proveedores (se usa el primero que tenga clave):
+1. Google Gemini Flash (GEMINI_API_KEY): tiene capa GRATIS, sin tarjeta. Es el recomendado.
+2. Claude Haiku (ANTHROPIC_API_KEY): pago, muy barato.
+Sin ninguna clave: se usa la caché versionada y, si falta algo, el respaldo sin IA.
 
 Por qué usamos IA acá y no en todo:
 - Es UNA llamada por narrativa (~13), no una por comentario (150.000).
@@ -6,8 +11,7 @@ Por qué usamos IA acá y no en todo:
 - Es una decisión que necesita "entender": ¿cuál de los dos bandos sostiene
   la afirmación y cuál la niega? Ninguna regla simple acertó siempre.
 
-La clave (ANTHROPIC_API_KEY) se lee del entorno o del archivo .env, que NUNCA
-se sube al repositorio.
+Las claves se leen del entorno o del archivo .env, que NUNCA se sube al repositorio.
 
 Reproducibilidad: cada respuesta se guarda en una caché versionada (modelos/cache_ia.json,
 ver cache_ia.py). Con la caché, el pipeline reproduce la entrega SIN clave. Si falta una
@@ -20,6 +24,9 @@ caché es lo que hace la salida idéntica entre corridas.
 import json
 import logging
 import os
+import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -45,6 +52,15 @@ ESQUEMA = {
 MAX_TOKENS = 1024
 PARAMETROS = {"max_tokens": MAX_TOKENS, "thinking": "disabled", "effort": "low", "esquema": ESQUEMA}
 
+# --- Gemini (Google). Modelo estable con capa gratis (ver aistudio.google.com/docs/pricing) ---
+MODELO_GEMINI = "gemini-3.8-flash"
+URL_GEMINI = "https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
+MAX_TOKENS_GEMINI = 8192   # holgado: en Gemini el "razonamiento" interno también gasta tokens de salida
+PARAMETROS_GEMINI = {"max_tokens": MAX_TOKENS_GEMINI, "formato": "json", "esquema": ESQUEMA}
+# En la capa gratis no se paga nada: el costo real es US$ 0 (los tokens igual se anotan)
+PRECIO_GEMINI_ENTRADA = 0.0
+PRECIO_GEMINI_SALIDA = 0.0
+
 INSTRUCCIONES = """Analizás comentarios de redes sociales en español rioplatense.
 Te paso comentarios de UNA misma discusión, separados en dos bandos opuestos (A y B).
 Una "narrativa" es la afirmación concreta que circula: un reclamo, una denuncia,
@@ -58,17 +74,36 @@ Respondé:
 - frases_clave: 4 a 6 palabras o frases cortas típicas de la narrativa."""
 
 
-def _cargar_clave():
-    """Busca ANTHROPIC_API_KEY en el entorno o en el archivo .env (sin mostrarla nunca)."""
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return True
-    ruta = Path(__file__).resolve().parent.parent / ".env"
-    if ruta.exists():
-        for linea in ruta.read_text(encoding="utf-8").splitlines():
-            if linea.strip().startswith("ANTHROPIC_API_KEY="):
-                os.environ["ANTHROPIC_API_KEY"] = linea.split("=", 1)[1].strip().strip('"').strip("'")
-                return True
-    return False
+def _cargar_clave(nombre="ANTHROPIC_API_KEY"):
+    """Busca la clave `nombre` en el entorno o en el archivo .env (sin mostrarla nunca).
+    Ignora el texto de ejemplo "poner-tu-clave-aca" de .env.example."""
+    valor = os.environ.get(nombre, "")
+    if not valor:
+        ruta = Path(__file__).resolve().parent.parent / ".env"
+        if ruta.exists():
+            for linea in ruta.read_text(encoding="utf-8").splitlines():
+                if linea.strip().startswith(nombre + "="):
+                    valor = linea.split("=", 1)[1].strip().strip('"').strip("'")
+    if not valor or "poner-tu-clave" in valor:
+        return False
+    os.environ[nombre] = valor
+    return True
+
+
+def _elegir_proveedor():
+    """Devuelve el proveedor a usar según qué clave haya: "gemini", "claude" o None."""
+    if _cargar_clave("GEMINI_API_KEY"):
+        return "gemini"
+    if _cargar_clave("ANTHROPIC_API_KEY"):
+        return "claude"
+    return None
+
+
+def _config(proveedor):
+    """(modelo, parámetros) del proveedor: entran en la huella de la caché."""
+    if proveedor == "gemini":
+        return MODELO_GEMINI, PARAMETROS_GEMINI
+    return MODELO, PARAMETROS
 
 
 def _mensaje(info):
@@ -109,6 +144,72 @@ def _preguntar(cliente, etiqueta, mensaje):
             "usd": round(uso.input_tokens * PRECIO_ENTRADA + uso.output_tokens * PRECIO_SALIDA, 8)}
 
 
+def _cuerpos_gemini(mensaje):
+    """Formas del pedido JSON a Gemini, de la más nueva a la más vieja.
+    La documentación cambió de nombre los campos varias veces: si una forma da error 400,
+    se prueba la siguiente (todas piden lo mismo: responder con JSON según ESQUEMA)."""
+    base = {"systemInstruction": {"parts": [{"text": INSTRUCCIONES}]},
+            "contents": [{"role": "user", "parts": [{"text": mensaje}]}]}
+    return [
+        {**base, "generationConfig": {"maxOutputTokens": MAX_TOKENS_GEMINI,
+                                      "responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": ESQUEMA}}}},
+        {**base, "generationConfig": {"maxOutputTokens": MAX_TOKENS_GEMINI,
+                                      "responseMimeType": "application/json", "responseJsonSchema": ESQUEMA}},
+        {**base, "generationConfig": {"maxOutputTokens": MAX_TOKENS_GEMINI,
+                                      "responseMimeType": "application/json"}},
+    ]
+
+
+def _post_gemini(cuerpo):
+    """Un POST a la API de Gemini con la librería estándar (sin dependencias nuevas).
+    Devuelve (código HTTP, json o texto del error)."""
+    pedido = urllib.request.Request(
+        URL_GEMINI.format(modelo=MODELO_GEMINI), data=json.dumps(cuerpo).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]})
+    try:
+        with urllib.request.urlopen(pedido, timeout=90) as r:
+            return r.status, json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        return error.code, error.read().decode("utf-8", "replace")[:300]
+
+
+def _preguntar_gemini(etiqueta, mensaje):
+    """Una llamada a Gemini. Devuelve la entrada para la caché, o None si no hubo respuesta usable."""
+    for cuerpo in _cuerpos_gemini(mensaje):
+        for intento in range(4):
+            try:
+                codigo, datos = _post_gemini(cuerpo)
+            except Exception as error:      # sin internet, tiempo agotado...
+                logging.warning("IA: falló la narrativa %s (%s)", etiqueta, type(error).__name__)
+                return None
+            if codigo in (429, 500, 503):   # demasiados pedidos (capa gratis) o servidor ocupado: esperar
+                time.sleep(15 * (intento + 1))
+                continue
+            break
+        if codigo == 400:                   # forma del pedido no aceptada: probar la siguiente
+            continue
+        if codigo != 200:
+            # El texto del error de Google nunca incluye la clave; ayuda a entender qué pasó
+            logging.warning("IA: falló la narrativa %s (HTTP %s: %s)", etiqueta, codigo, str(datos)[:160])
+            return None
+        partes = (datos.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+        texto = "".join(p.get("text", "") for p in partes if not p.get("thought"))
+        try:
+            respuesta = json.loads(texto)
+        except json.JSONDecodeError:
+            logging.warning("IA: Gemini no devolvió JSON válido para %s", etiqueta)
+            return None
+        if respuesta.get("bando_que_afirma") not in ("A", "B"):
+            return None
+        uso = datos.get("usageMetadata", {})
+        entrada = uso.get("promptTokenCount", 0)
+        salida = uso.get("candidatesTokenCount", 0) + uso.get("thoughtsTokenCount", 0)
+        return {"respuesta": respuesta, "tokens_entrada": entrada, "tokens_salida": salida,
+                "usd": round(entrada * PRECIO_GEMINI_ENTRADA + salida * PRECIO_GEMINI_SALIDA, 8)}
+    logging.warning("IA: Gemini rechazó todas las formas del pedido para %s", etiqueta)
+    return None
+
+
 MIN_COINCIDENCIAS = 4   # respaldo difuso: ejemplos en común (de 12) para reconocer un bando
 
 
@@ -144,7 +245,13 @@ def decidir(resumen, crono, ruta_cache=None, huella_datos=""):
     titulos = {}
     cache = cache_ia.CacheIA(ruta_cache) if ruta_cache else cache_ia.CacheIA()
     mensajes = {k: _mensaje(v) for k, v in resumen.items()}
-    claves = {k: cache_ia.huella(MODELO, PARAMETROS, INSTRUCCIONES, m) for k, m in mensajes.items()}
+    # Proveedor: el que tenga clave. Sin clave, la huella es la de Gemini si la caché tiene
+    # respuestas de Gemini (así el jurado reproduce la entrega), y si no, la de Claude.
+    proveedor = _elegir_proveedor()
+    if proveedor is None:
+        proveedor = "gemini" if any(e.get("modelo") == MODELO_GEMINI for e in cache.datos.values()) else "claude"
+    modelo, parametros = _config(proveedor)
+    claves = {k: cache_ia.huella(modelo, parametros, INSTRUCCIONES, m) for k, m in mensajes.items()}
     entradas = {k: cache.buscar(c) for k, c in claves.items()}
     invertidas = set()
     for k in sorted(k for k, e in entradas.items() if e is None):
@@ -156,21 +263,26 @@ def decidir(resumen, crono, ruta_cache=None, huella_datos=""):
             logging.info("IA: %s resuelta con una respuesta guardada parecida (ejemplos en común)", k)
     faltan = sorted(k for k, e in entradas.items() if e is None)
 
-    if faltan and _cargar_clave():
-        import anthropic
-        cliente = anthropic.Anthropic(max_retries=3, timeout=60)
-        # Hasta 8 narrativas en paralelo para no esperar una por una
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            futuros = {k: pool.submit(_preguntar, cliente, k, mensajes[k]) for k in faltan}
-        for k, futuro in futuros.items():
-            entrada = futuro.result()
+    if faltan and _elegir_proveedor():
+        if proveedor == "gemini":
+            # De a una: la capa gratis limita los pedidos por minuto
+            resultados = {k: _preguntar_gemini(k, mensajes[k]) for k in faltan}
+        else:
+            import anthropic
+            cliente = anthropic.Anthropic(max_retries=3, timeout=60)
+            # Hasta 8 narrativas en paralelo para no esperar una por una
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futuros = {k: pool.submit(_preguntar, cliente, k, mensajes[k]) for k in faltan}
+            resultados = {k: f.result() for k, f in futuros.items()}
+        for k, entrada in resultados.items():
             if entrada:
-                entrada.update({"etiqueta": k, "huella_datos": huella_datos, "ejemplos": resumen[k]["ejemplos"]})
+                entrada.update({"etiqueta": k, "huella_datos": huella_datos, "ejemplos": resumen[k]["ejemplos"],
+                                "modelo": modelo})
                 cache.guardar(claves[k], entrada)
                 entradas[k] = entrada
         cache.escribir()
     elif faltan:
-        logging.warning("IA: %s narrativas sin respuesta en la caché y sin ANTHROPIC_API_KEY: "
+        logging.warning("IA: %s narrativas sin respuesta en la caché y sin clave (GEMINI_API_KEY ni ANTHROPIC_API_KEY): "
                         "uso el respaldo (el bando más grande apoya)", len(faltan))
 
     for k in sorted(entradas):
@@ -185,6 +297,7 @@ def decidir(resumen, crono, ruta_cache=None, huella_datos=""):
         titulos[k] = {"titulo": r["titulo"].strip(), "frases_clave": [f.strip() for f in r["frases_clave"]]}
     crono.ia_desde_cache = cache.aciertos
     crono.ia_nuevas = cache.nuevas
+    crono.ia_modelo = modelo   # para que costo.json diga qué modelo se usó
     logging.info("IA: %s de %s narrativas resueltas con %s (%s de la caché, %s nuevas; US$ %.4f)",
-                 len(titulos), len(resumen), MODELO, cache.aciertos, cache.nuevas, crono.usd_ia)
+                 len(titulos), len(resumen), modelo, cache.aciertos, cache.nuevas, crono.usd_ia)
     return apoya_es, titulos

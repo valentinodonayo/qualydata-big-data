@@ -170,7 +170,10 @@ def main():
         grupo=estado.get("grupo"), narrativas=estado.get("narrativas"))
 
     if crono.tokens_ia:
-        uso_ia = f"IA ({ia.MODELO}) 1 llamada por narrativa para decidir qué bando apoya y titularla"
+        modelo_ia = getattr(crono, "ia_modelo", ia.MODELO)
+        uso_ia = f"IA ({modelo_ia}) 1 llamada por narrativa para decidir qué bando apoya y titularla"
+        if modelo_ia == ia.MODELO_GEMINI:
+            uso_ia += " (capa gratis de Google: US$ 0)"
         if getattr(crono, "ia_desde_cache", 0):
             uso_ia += (f" ({crono.ia_desde_cache} respuestas leídas de la caché versionada modelos/cache_ia.json;"
                        f" tokens y USD = los de la corrida que las generó)")
