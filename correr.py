@@ -180,8 +180,8 @@ def main():
     else:
         uso_ia = "IA: no se usó (sin clave ni caché); qué bando apoya lo decide el bando más grande"
     notas = (f"embeddings locales ({embeddings.MODELO}); narrativas: micro-grupos (UMAP+HDBSCAN) + votos de "
-             f"hilos + Leiden; ruido: clasificador entrenado en práctica; {uso_ia}; coordinación: copias + "
-             f"llegadas juntas + respuestas + comunidades densas (Leiden) + hashtag propio, sin IA")
+             f"hilos + Leiden; ruido: participación en hilos de los comentarios más parecidos (clasificador entrenado solo de respaldo); {uso_ia}; coordinación: copias + "
+             f"llegadas juntas + respuestas + comunidades densas (Leiden) + hashtag propio + llegadas en momentos tranquilos, sin IA")
     if errores:
         notas += f"; etapas con error: {', '.join(errores)} (ver cache/reportes/log.txt)"
     info = costo.escribir_costo(args.entrega, crono, len(estado["comentario_ids"]), ALMACENAMIENTO, notas,
