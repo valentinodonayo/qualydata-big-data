@@ -1,7 +1,7 @@
 # Texto para cargar el BUIDL en Hacki
 
-> Copiá cada bloque en el campo que corresponde. Los números salen de `experimentos/runs.csv`
-> (práctica, script oficial del jurado) y de `entrega/costo.json` (set final).
+Copiá cada bloque en el campo que corresponde. Los números salen de `experimentos/runs.csv`
+(práctica, script oficial del jurado) y de `entrega/costo.json` (set final).
 
 ## Nombre
 
@@ -9,7 +9,7 @@ Narrativas y cuentas coordinadas
 
 ## Descripción corta (una línea)
 
-Qué se dice, quién lo apoya, desde cuándo y qué cuentas lo empujan: 150.000 comentarios en un comando y 108 segundos, con la IA usada solo donde hace falta.
+Qué se dice en 150.000 comentarios, quién lo apoya, desde cuándo y qué cuentas lo empujan. Un comando, 108 segundos y una IA que solo decide lo que las reglas no pueden.
 
 ## Track
 
@@ -23,53 +23,54 @@ https://github.com/valentinodonayo/qualydata-big-data
 
 ### Qué hace
 
-Toma el set del desafío y responde, sin intervención manual, las dos preguntas del jurado: **qué narrativas circulan** (qué comentario pertenece a cuál, quién la apoya, quién la rechaza y cuándo nació) y **qué parte de la conversación está armada** (qué cuentas actúan coordinadas y en qué operación). Corre de punta a punta con `make entrega`, en una notebook, sin servicios externos.
+Dejamos de leer comentarios de a uno. El pipeline responde las tres preguntas del desafío con un solo comando: qué narrativas circulan y desde cuándo, quién las apoya y quién las rechaza, y qué cuentas actúan en coordinación.
 
 ### Cómo funciona
 
-- **Datos.** DuckDB lee y limpia los CSV (fechas rotas, filas duplicadas, columnas desordenadas) y deja una copia en Parquet. Sin servidor.
-- **Significado.** Embeddings multilingües locales (`multilingual-e5-small`) agrupan los comentarios por lo que dicen, no por las palabras que usan.
-- **Narrativas.** Cientos de micro-grupos muy puros se unen cuando sus comentarios se responden entre sí: una respuesta discute dentro de la narrativa de su padre, aunque la rechace. No hay lista previa ni cantidad fija.
-- **Ruido.** Un comentario suelto es ruido cuando casi ninguno de sus 50 comentarios más parecidos participa de una discusión. No usa etiquetas ni depende del tema.
-- **Postura.** Dentro de cada narrativa, las respuestas que se contradicen separan dos bandos. Lo único que necesita "entender" es cuál de los dos afirma: un bit por narrativa.
-- **IA solo para ese bit.** Tres modelos (por Vercel AI Gateway) miran ejemplos de cada bando y votan cuál afirma; a cada uno se le pregunta dos veces, con los bandos en un orden y en el otro, porque tienden a elegir el que aparece primero. Si se contradicen, decide la estructura (tamaño de los bandos y lado de la operación coordinada). Las respuestas quedan guardadas en el repositorio: el jurado reproduce la entrega sin clave y sin internet.
-- **Coordinación.** Cuentas que copian textos, llegan juntas a las mismas publicaciones en momentos tranquilos, comparten un hashtag propio o se responden en red cerrada. Coincidir en un momento viral casi no pesa; coincidir cuando no hay nadie, mucho. Si una operación se creó en tanda (misma semana, misma forma de usuario), se suman las cuentas de esa tanda.
+1. **Agrupa por significado.** Comentarios que dicen lo mismo caen juntos aunque usen otras palabras (embeddings locales, sin servidor).
+2. **Descubre las narrativas sin lista previa.** Quien responde discute la afirmación de su padre; esas respuestas unen los grupos.
+3. **Arma dos bandos por narrativa.** Las respuestas que se contradicen separan a los que apoyan de los que rechazan.
+4. **La IA decide solo lo que hace falta.** Tres modelos votan cuál de los dos bandos afirma, preguntados en los dos órdenes para no caer en el sesgo de posición. Las respuestas quedan guardadas en el repo: el jurado reproduce la entrega sin clave.
+5. **Coordinación.** Cuentas que copian textos, llegan juntas a las mismas publicaciones en momentos tranquilos, comparten un hashtag o se responden en círculo. Coincidir en un momento viral casi no cuenta; coincidir de madrugada, mucho.
 
 ### Resultados
 
-**Set de práctica, puntaje automático con el script oficial: 54,72 de 55** (narrativas 29,99 de 30; coordinación 24,72 de 25). Sin IA saca 53,95. La línea base del desafío saca 16,95.
+**Set de práctica, script oficial: 54,72 de 55** (línea base: 16,95). Sin IA: 53,95.
 
 | Medida | Valor |
 |---|---|
-| Agrupamiento de narrativas (B-cubed F1) | 1,000 |
-| Detección de ruido (F1) | 1,000 |
-| Origen de las 3 narrativas emergentes | 1,000 |
-| Postura (macro-F1) | 0,998 (acierta el lado de las 13 narrativas) |
-| Cuentas coordinadas (F1) | 0,991: 113 de 115 cuentas de campaña y ninguna genuina marcada entre 15.876 |
-| Operaciones (B-cubed F1) | 0,983 (las 3 campañas, cada una entera en una operación) |
+| Narrativas | 29,99 de 30 |
+| Coordinación | 24,72 de 25 |
+| Cuentas marcadas | ninguna genuina entre 15.876; 113 de 115 de campaña |
+| Acierto de postura con IA | las 13 narrativas |
 
 **Set final (150.000 comentarios, 12.002 cuentas, 10 días):**
 
-- 12 narrativas en tres temas (seguridad, festival, dique); 3 nacen con el período ya empezado.
+- 12 narrativas en tres temas (seguridad, festival, dique). Tres nacen con el período empezado.
 - 20,7% de ruido.
-- 3 operaciones coordinadas, 97 cuentas: una empuja que el dique es la solución para el agua (50 cuentas creadas en la misma semana, textos plantilla), otra que el festival es un derroche (25 cuentas antiguas con actividad de cobertura) y otra el cierre de la comisaría del norte (22 cuentas creadas en la misma semana, activas de madrugada).
-- **108 segundos desde cero** en una notebook (0,72 s por cada mil comentarios). IA: 6 llamadas por narrativa, US$ 0,19 a precio de lista en total (US$ 0,0012 por cada mil comentarios) y US$ 0 en cada re-corrida, porque las respuestas quedan guardadas.
+- 3 operaciones y 97 cuentas: una empuja que el dique es la solución para el agua; otra, que el festival es un derroche; otra, el cierre de la comisaría del norte.
+- 108 s en una Mac. En CPU, sin GPU, corrimos desde cero en 222 s.
+- IA: US$ 0,19 a precio de lista para todo el set. Cada re-corrida cuesta US$ 0, porque lee las respuestas guardadas.
 
-### Generalización y robustez
+### Lo que no funciona todavía
 
-Cada cambio se aceptó midiendo en el set de práctica y en un hold-out: un tema entero que el pipeline nunca vio, solo los primeros 10 días, otras semillas y datos ensuciados a propósito. La tabla completa está en `docs/generalizacion.md` y cada corrida queda anotada en `experimentos/runs.csv`, incluidas las ideas que se descartaron (`reportes/mejoras.md`).
+Lo medimos y lo documentamos en el README:
+
+- Si una campaña comenta en los mismos momentos que la gente común, la coordinación marca de más. Lo vimos en un set inventado sin ciclo de día y noche.
+- Sin IA, la postura es una moneda al aire en narrativas casi empatadas.
+- Una narrativa con menos del 1% de los comentarios puede quedar pegada a otra del mismo tema.
 
 ### Probado con otros textos
 
-Además del hold-out, lo corrimos sobre recortes y mezclas de los sets oficiales (10%, 25%, 50%, práctica y final juntos, sin campañas, fechas corridas, todo en mayúsculas) y sobre un set inventado con otros temas (un basural, la tarifa de la luz, una escuela, un club) con verdad propia. El agrupamiento en narrativas se sostiene: B-cubed entre 0,98 y 1,00 y ruido 1,000 en todos los casos que respetan la estructura del set oficial. Lo que no se sostiene está documentado en "Límites conocidos" del README: la coordinación depende de la dinámica del set.
+Lo corrimos sobre recortes del set (10%, 25%, 50%), sobre práctica y final juntos, con todo en mayúsculas y con fechas corridas. Y sobre un set inventado con otros temas (un basural, la tarifa de la luz, una escuela, un club de barrio) con verdad propia: las narrativas se sostienen con B-cubed entre 0,98 y 1,00.
 
 ### Reproducible
 
-Semillas fijas, versiones exactas en `uv.lock`, validador de formato y 48 tests. Un clon limpio corre con un comando y no necesita ninguna clave: verificamos que sin clave salen los mismos tres archivos, byte a byte.
+Un clon limpio, sin ninguna clave, da las mismas narrativas y las mismas cuentas, byte a byte. Semillas fijas, versiones exactas en `uv.lock` y 48 tests.
 
 ### Tablero
 
-`reportes/dashboard.html` abre sin internet: línea de tiempo de cada narrativa, apoyo contra rechazo, qué operación la empuja y una ficha por operación (cuentas, antigüedad, horas pico y texto típico).
+`reportes/dashboard.html` abre sin internet: la línea de tiempo de cada narrativa, cuánto la apoya y la rechaza, qué operación la empuja y una ficha por operación.
 
 ### Cómo correrlo
 
@@ -77,9 +78,8 @@ Semillas fijas, versiones exactas en `uv.lock`, validador de formato y 48 tests.
 make entrega
 ```
 
-Baja el set final, instala las versiones exactas y escribe `entrega/` y el tablero. Código abierto bajo licencia MIT.
+Baja el set final, instala las versiones exactas y escribe `entrega/` y el tablero. Licencia MIT.
 
 ## Video de demo
 
-`reportes/demo.mp4` (72 segundos, sin audio). Enlace directo una vez pusheado:
-https://github.com/valentinodonayo/qualydata-big-data/raw/main/reportes/demo.mp4
+`reportes/demo.mp4` (82 segundos, sin audio), en el repo: https://github.com/valentinodonayo/qualydata-big-data/raw/main/reportes/demo.mp4
