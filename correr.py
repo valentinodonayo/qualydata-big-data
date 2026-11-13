@@ -75,6 +75,10 @@ def etapa_postura(estado, args):
         # Huella del set de datos: la caché de IA solo reutiliza respuestas del MISMO set
         ids = "\n".join(sorted(estado["comentario_ids"]))
         huella_datos = hashlib.sha256(ids.encode("utf-8")).hexdigest()[:16]
+        # Señal extra (no va en el pedido a la IA, solo desempata): bando de las cuentas coordinadas.
+        # Si la etapa de coordinación falló, no hay "grupo" y simplemente no se usa.
+        for k, votos in postura.bando_de_operaciones(com, bando_com, extra, estado.get("grupo") or {}).items():
+            resumen[k]["coordinadas"] = votos
         resumen_ia = ia.decidir(resumen, estado["crono"], huella_datos=huella_datos)
     apoya_es, titulos = resumen_ia
     estado["postura"] = postura.posturas(com, bando_com, apoya_es, extra)
@@ -105,8 +109,10 @@ ETAPAS = [
     ("datos", etapa_datos),
     ("embeddings", etapa_embeddings),
     ("narrativas", etapa_narrativas),
-    ("postura", etapa_postura),
+    # La coordinación va ANTES de la postura: no depende de ella, y la postura usa como señal
+    # de qué lado escriben las cuentas coordinadas (ver postura.bando_de_operaciones).
     ("coordinacion", etapa_coordinacion),
+    ("postura", etapa_postura),
 ]
 
 
@@ -171,7 +177,9 @@ def main():
 
     if crono.tokens_ia:
         modelo_ia = getattr(crono, "ia_modelo", ia.MODELO)
-        uso_ia = f"IA ({modelo_ia}) 1 llamada por narrativa para decidir qué bando apoya y titularla"
+        pedidos = getattr(crono, "ia_pedidos", 1)
+        llamadas = "1 llamada" if pedidos == 1 else f"{pedidos} llamadas (cada modelo 2 veces, con los bandos en un orden y en el otro; costo a precio de lista)"
+        uso_ia = f"IA ({modelo_ia}) {llamadas} por narrativa para decidir qué bando apoya y titularla"
         if modelo_ia == ia.MODELO_GEMINI:
             uso_ia += " (capa gratis de Google: US$ 0)"
         if getattr(crono, "ia_desde_cache", 0):

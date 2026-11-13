@@ -14,6 +14,7 @@ RESPUESTA = {"afirmacion": "El dique trae agua", "bando_que_afirma": "B",
 def sin_clave(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("AI_GATEWAY_API_KEY", raising=False)
     monkeypatch.setattr(ia, "_cargar_clave", lambda *a: False)
 
 
@@ -45,7 +46,9 @@ def test_acierto_parecido_con_bandos_invertidos(tmp_path):
     """Otra máquina numeró los bandos al revés y cambió un ejemplo: igual se reconoce."""
     ruta = tmp_path / "c.json"
     c = cache_ia.CacheIA(ruta)
-    c.guardar("otra-huella", _entrada(etiqueta="n01", huella_datos="set1", ejemplos=[EJ_1, EJ_0]))
+    # En la caché se guardan huellas (hashes) de los ejemplos, no los textos
+    c.guardar("otra-huella", _entrada(etiqueta="n01", huella_datos="set1",
+                                      ejemplos=ia._huellas_ejemplos([EJ_1, EJ_0])))
     c.escribir()
     distinto = {"n01": {"tamano": [100, 90], "ejemplos": [EJ_0[:11] + ["texto nuevo"], EJ_1]}}
     apoya, _ = ia.decidir(distinto, costo.Cronometro(), ruta_cache=ruta, huella_datos="set1")
