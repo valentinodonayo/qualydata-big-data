@@ -14,8 +14,10 @@ Idea en 4 pasos (todo sin saber de antemano cuántas narrativas hay):
    encuentra las comunidades = narrativas. No hay umbral a mano.
 
 3. RUIDO. Los comentarios de ruido ("Feliz cumple", "@fulano mirá") nunca
-   forman parte de una discusión: no responden ni reciben respuestas largas.
-   Un micro-grupo sin ningún voto queda como ruido.
+   forman parte de una discusión: no responden ni reciben respuestas.
+   Un micro-grupo sin ningún voto queda como ruido. Y al final (paso 5), cada
+   comentario suelto (raíz sin respuestas) se decide mirando a sus ~50
+   comentarios más parecidos: si NINGUNO participa de un hilo, es ruido.
 
 4. HILOS COMPLETOS. Cada hilo (raíz + todas sus respuestas) lleva la narrativa
    que tiene la mayoría de sus comentarios con contenido. Así las respuestas
@@ -186,7 +188,7 @@ def rasgos_ruido(final, com, emb, emb_indice, pos_padre):
 
 
 def _filtrar_ruido(final, com, emb, emb_indice, pos_padre, modelo_ruido):
-    """Decide cuáles raíces dudosas son ruido, con el clasificador entrenado en práctica."""
+    """RESPALDO (sets casi sin hilos): decide cuáles raíces dudosas son ruido con el clasificador entrenado."""
     pos, rasgos, cercana = rasgos_ruido(final, com, emb, emb_indice, pos_padre)
     if len(pos) == 0:
         return final
@@ -207,13 +209,120 @@ def _filtrar_ruido(final, com, emb, emb_indice, pos_padre, modelo_ruido):
     return final
 
 
+VECINOS_RUIDO = 50         # cuántos comentarios parecidos miramos para decidir si uno suelto es ruido
+FRACCION_RUIDO = 0.1       # ruido = sus vecinos participan de hilos menos del 10% de lo normal en el set
+MIN_TASA_HILOS = 0.02      # si menos del 2% de los comentarios está en hilos, la señal no sirve (respaldo)
+
+
+def tasa_hilos_vecinos(emb, emb_indice, con_contenido, en_hilo, consultar):
+    """Para cada comentario a consultar: ¿qué fracción de sus comentarios más parecidos está en un hilo?
+
+    La idea: el ruido ("Feliz cumple", "@fulano mirá") nunca recibe respuestas, y los
+    comentarios que se le parecen (sus copias, sus variantes con errores de tipeo) tampoco.
+    En cambio una consigna corta de una narrativa puede no tener respuestas ESTA vez,
+    pero alguna de sus copias o frases vecinas sí las tiene.
+
+    Cómo se calcula: se ordenan los textos distintos del más al menos parecido (coseno entre
+    embeddings) y se van juntando hasta reunir VECINOS_RUIDO comentarios (cada texto cuenta
+    tantas veces como copias tiene). Devuelve: comentarios en hilo / comentarios juntados.
+    No depende del tema ni usa nada de la verdad de práctica.
+    """
+    import torch   # se importa acá porque tarda; "topk" busca los más parecidos mucho más rápido que numpy
+    U = emb.shape[0]
+    # Por cada texto distinto: cuántos comentarios lo usan (n) y cuántos de esos están en un hilo (h)
+    n = np.bincount(emb_indice[con_contenido], minlength=U)
+    h = np.bincount(emb_indice[con_contenido & en_hilo], minlength=U)
+    base = np.where(n > 0)[0]
+    V = torch.from_numpy(np.ascontiguousarray(emb[base], dtype=np.float32))
+    n_base = torch.from_numpy(n[base].astype(np.float32))
+    h_base = torch.from_numpy(h[base].astype(np.float32))
+    k = min(VECINOS_RUIDO, len(base))            # con k textos distintos seguro juntamos ≥ k comentarios
+    textos_consulta = np.unique(emb_indice[consultar])
+    tasa_texto = np.zeros(U)
+    paso = max(1, 100_000_000 // max(len(base), 1))   # de a tandas, para no llenar la memoria
+    for i in range(0, len(textos_consulta), paso):
+        tanda = textos_consulta[i:i + paso]
+        parecido = torch.from_numpy(np.ascontiguousarray(emb[tanda], dtype=np.float32)) @ V.T
+        vecinos = torch.topk(parecido, k, dim=1).indices          # ya vienen del más al menos parecido
+        n_acum = torch.cumsum(n_base[vecinos], dim=1).numpy()
+        h_acum = torch.cumsum(h_base[vecinos], dim=1).numpy()
+        # Cortamos en el primer vecino con el que ya juntamos VECINOS_RUIDO comentarios
+        corte = np.minimum((n_acum < VECINOS_RUIDO).sum(1), k - 1)
+        filas = np.arange(len(tanda))
+        tasa_texto[tanda] = h_acum[filas, corte] / n_acum[filas, corte]
+    return tasa_texto[emb_indice[consultar]]
+
+
+def _separar_ruido(final, com, emb, emb_indice, pos_padre, con_contenido, pos_raiz, micro_com, modelo_ruido):
+    """Paso 5: decide qué comentarios sueltos son ruido y rescata los que no lo son.
+
+    - Un comentario que está en un hilo (responde o le responden) nunca es ruido.
+    - Un comentario suelto es ruido si sus vecinos más parecidos casi nunca están en hilos
+      (ver tasa_hilos_vecinos), o si no tiene ninguna palabra (solo emojis o vacío).
+    - Lo que NO es ruido y había quedado sin narrativa se rescata: primero se mira a sus
+      COPIAS (mismo texto) que ya tienen narrativa gracias a un hilo, y toma la más votada;
+      si no tiene copias con narrativa, va a la del micro-grupo más parecido (cada micro-grupo
+      es "una forma de decir algo": es más fino que un solo centro por narrativa).
+    Si el set casi no tiene hilos, esta señal no existe: se usa el clasificador entrenado.
+    """
+    tiene_respuestas = np.zeros(len(com), dtype=bool)
+    tiene_respuestas[pos_padre[pos_padre >= 0]] = True
+    en_hilo = tiene_respuestas | (pos_padre >= 0)
+    tasa_normal = float(en_hilo[con_contenido].mean()) if con_contenido.any() else 0.0
+    if tasa_normal < MIN_TASA_HILOS or not (final >= 0).any():
+        logging.info("Narrativas: casi no hay hilos (%.1f%%); el ruido lo decide el clasificador", 100 * tasa_normal)
+        return _filtrar_ruido(final, com, emb, emb_indice, pos_padre, modelo_ruido)
+
+    sueltos = np.where(~en_hilo)[0]
+    tasa = tasa_hilos_vecinos(emb, emb_indice, con_contenido, en_hilo, sueltos)
+    sin_palabras = np.array([len(tx.para_comparar(t).split()) == 0 for t in com["texto"].to_numpy()[sueltos]])
+    es_ruido = (tasa < FRACCION_RUIDO * tasa_normal) | sin_palabras
+    final = final.copy()
+    final[sueltos[es_ruido]] = -1
+
+    # Centro de cada micro-grupo, calculado SOLO con sus comentarios que quedaron con narrativa
+    # (así el ruido que se había colado en un micro-grupo no corre el centro)
+    con_narr = (final >= 0) & (micro_com >= 0)
+    if not con_narr.any():       # no quedó ningún micro-grupo con narrativa: no hay a dónde rescatar
+        return final
+    tabla = pd.DataFrame({"micro": micro_com[con_narr], "narr": final[con_narr], "texto": emb_indice[con_narr]})
+    narr_de_micro = tabla.groupby("micro")["narr"].agg(lambda x: x.mode().iloc[0])   # la narrativa más común
+    centros = np.vstack([emb[grupo["texto"].to_numpy()].mean(0) for _, grupo in tabla.groupby("micro")])
+    centros /= np.linalg.norm(centros, axis=1, keepdims=True)
+    narr_de_micro = narr_de_micro.to_numpy()     # mismo orden que los centros (groupby ordena por micro)
+
+    # A rescatar: (1) sueltos que no son ruido pero no tenían narrativa, y (2) hilos enteros sin
+    # narrativa (nadie del hilo cayó en un micro-grupo con votos); el hilo se decide por su raíz
+    rescatar = sueltos[~es_ruido & (final[sueltos] < 0)]
+    hilo_sin = np.where(en_hilo & (final < 0))[0]
+    a_rescatar = np.concatenate([rescatar, hilo_sin])
+    if len(a_rescatar):
+        texto_guia = emb_indice[np.concatenate([rescatar, pos_raiz[hilo_sin]])]   # el texto que decide
+        # Opción B (para todos): la narrativa del micro-grupo más parecido
+        elegida = narr_de_micro[(emb[texto_guia] @ centros.T).argmax(1)]
+        # Opción A (si se puede, gana): la narrativa más votada entre las copias del mismo texto
+        # que ya tienen narrativa. Ej.: una consigna corta que el agrupamiento dejó afuera, pero
+        # varias de sus copias recibieron respuestas en un hilo (y el hilo ya sabe de qué narrativa es).
+        con_n = (final >= 0) & np.isin(emb_indice, texto_guia)
+        votos = pd.DataFrame({"texto": emb_indice[con_n], "narr": final[con_n]}).value_counts().reset_index(name="n")
+        votos = votos.sort_values(["texto", "n", "narr"], ascending=[True, False, True]).drop_duplicates("texto")
+        por_copias = pd.Series(texto_guia).map(votos.set_index("texto")["narr"]).to_numpy(dtype=float)
+        hay_copias = ~np.isnan(por_copias)
+        elegida[hay_copias] = por_copias[hay_copias].astype(int)
+        final[a_rescatar] = elegida
+    logging.info("Narrativas: %s comentarios sueltos, %s son ruido (vecinos sin hilos); rescatados %s sueltos y %s en hilos",
+                 len(sueltos), int(es_ruido.sum()), len(rescatar), len(hilo_sin))
+    return final
+
+
 def detectar(com: pd.DataFrame, emb, emb_indice, carpeta_cache: Path, modelo_ruido=None,
              solo_sin_filtrar=False):
     """Devuelve (narrativa_por_comentario, tabla_narrativas, raiz_por_comentario, extra).
 
     com: comentarios limpios (comentario_id, respuesta_a, texto, ts, ...)
     emb, emb_indice: salida de embeddings.calcular()
-    modelo_ruido: coeficientes del clasificador de ruido (modelos/ruido.json) o None
+    modelo_ruido: coeficientes del clasificador de ruido de respaldo (modelos/ruido.json) o None;
+                  solo se usa si el set casi no tiene hilos (ver _separar_ruido)
     solo_sin_filtrar: lo usa el script de entrenamiento (devuelve antes del paso 5)
     """
     ids = com["comentario_id"].tolist()
@@ -246,9 +355,10 @@ def detectar(com: pd.DataFrame, emb, emb_indice, carpeta_cache: Path, modelo_rui
     if solo_sin_filtrar:
         return final, pos_padre
 
-    # Paso 5: limpiar el ruido que se coló. Son raíces cortas, sin respuestas,
-    # que quedaron dentro de algún micro-grupo. Un clasificador chico decide.
-    final = _filtrar_ruido(final, com, emb, emb_indice, pos_padre, modelo_ruido)
+    # Paso 5: separar el ruido de los comentarios sueltos mirando si sus vecinos más
+    # parecidos participan de hilos (si el set no tiene hilos, decide el clasificador entrenado).
+    pos_raiz = np.array([pos[raiz[c]] for c in ids])
+    final = _separar_ruido(final, com, emb, emb_indice, pos_padre, con_contenido, pos_raiz, micro_com, modelo_ruido)
 
     # Etiquetas legibles n01, n02... ordenadas por tamaño (la más grande primero)
     tamanos = Counter(final[final >= 0])

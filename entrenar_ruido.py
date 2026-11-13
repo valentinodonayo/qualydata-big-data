@@ -1,4 +1,8 @@
-"""Entrena el clasificador de ruido con la verdad del set de PRÁCTICA.
+"""Entrena el clasificador de ruido de RESPALDO con la verdad del set de PRÁCTICA.
+
+Desde el bloque de "vecinos en hilos", el ruido se decide mirando si los comentarios
+más parecidos participan de hilos (pipeline/narrativas.py, paso 5), sin entrenar nada.
+Este clasificador queda solo como respaldo para un set que casi no tenga hilos.
 
 Uso (se corre una vez; el resultado queda en modelos/ruido.json y va al repo):
     uv run python entrenar_ruido.py
