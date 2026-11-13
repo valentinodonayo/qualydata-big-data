@@ -127,3 +127,22 @@ def test_tanda_de_creacion():
     # Sin tanda (fechas desparramadas): no suma a nadie
     cuentas.loc[cuentas.cuenta_id.isin(miembros), "fecha_creacion"] = [f"20{10 + i}-01-01" for i in range(6)]
     assert coordinacion._tanda_de_creacion(com, cuentas, grupo) == {}
+
+
+def test_red_de_respuestas_suelta_a_la_cuenta_de_una_sola_respuesta():
+    """Comunidad densa de 6 cuentas que se responden entre todas, más 'casual', que cruzó UNA
+    sola respuesta con un miembro: la comunidad se detecta, pero 'casual' no queda adentro."""
+    filas, i = [], 0
+    red = [f"r{k}" for k in range(6)]
+    for a in red:
+        for b in red:
+            if a < b:
+                for _ in range(2):
+                    i += 1
+                    filas.append(_fila(i, "p1", a, BASE + i, "hola"))
+                    i += 1
+                    filas.append(_fila(i, "p1", b, BASE + i, "hola", resp=f"c{i - 1}"))
+    i += 1
+    filas.append(_fila(i, "p1", "casual", BASE + i, "hola", resp="c1"))
+    grupos = coordinacion._grupos_por_red_de_respuestas(pd.DataFrame(filas))
+    assert len(grupos) == 1 and "casual" not in grupos[0] and set(red) <= grupos[0]
