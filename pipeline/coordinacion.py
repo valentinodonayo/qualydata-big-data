@@ -77,6 +77,8 @@ FRANJA_LARGA_S = 60 * 60       # capa G: franja para contar publicaciones distin
 TANDA_MAX_DIAS = 10            # capa H: ancho máximo de la ventana de creación (percentiles 5-95)
 TANDA_FORMA_MIN = 0.8          # capa H: fracción de miembros con la forma de usuario dominante
 TANDA_MIN_MIEMBROS = 5         # capa H: miembros con metadata para evaluar una tanda
+TOPE_SUMA = 1.0                # capas E, G y H: una capa de "suma" no puede más que duplicar la operación
+TOPE_SUMA_MINIMO = 5           # ...salvo en operaciones muy chicas, donde se permiten hasta 5 cuentas
 SEMILLA = int(os.environ.get("QUALY_SEMILLA", "42"))   # fija; se cambia solo para medir estabilidad
 
 CUENTA_DESCONOCIDA = "desconocida"   # la pone datos.py cuando falta la cuenta: no se mezcla
@@ -343,6 +345,33 @@ def _tanda_de_creacion(com, cuentas, grupo):
     return nuevas
 
 
+def _sumar_con_tope(operaciones, nuevas, capa, base):
+    """Suma a cada operación las cuentas que propone una capa de "suma" (E, G o H), con un tope.
+
+    nuevas: {cuenta: índice de operación}.  base: tamaño de cada operación ANTES de esa capa.
+    Las capas de suma buscan cuentas sueltas que se parecen a una operación ya detectada. Si una capa
+    propone más cuentas que las que la operación ya tiene, la señal dejó de ser específica (en un set
+    con otra dinámica, por ejemplo campañas que comentan en los momentos de más gente, medio padrón
+    "se parece" a la operación). En ese caso no se suma ninguna de esa capa a esa operación: preferimos
+    perder alguna cuenta real antes que acusar a cientos de genuinas. Devuelve cuántas sumó.
+    """
+    por_op = defaultdict(list)
+    for c, i in nuevas.items():
+        por_op[i].append(c)
+    sumadas = 0
+    for i, cuentas in por_op.items():
+        ya = len(operaciones[i][0]) - base[i]            # lo que esta capa ya sumó en pasadas anteriores
+        tope = max(TOPE_SUMA_MINIMO, int(TOPE_SUMA * base[i]))
+        if ya + len(cuentas) > tope:
+            logging.warning("Coordinación (%s): propone %s cuentas para una operación de %s; es demasiado "
+                            "para ser una señal específica y no se suma ninguna", capa, len(cuentas), base[i])
+            continue
+        operaciones[i][0].update(cuentas)
+        operaciones[i][1].add(capa)
+        sumadas += len(cuentas)
+    return sumadas
+
+
 def detectar(com: pd.DataFrame, metadata_cuentas: pd.DataFrame = None):
     """Devuelve (grupo, resumen).
 
@@ -367,26 +396,21 @@ def detectar(com: pd.DataFrame, metadata_cuentas: pd.DataFrame = None):
 
     # Capa E: adhesión de cuentas a las operaciones ya armadas
     provisorio = {c: i for i, (cuentas, _) in enumerate(operaciones) for c in sorted(cuentas)}
-    for c, i in _adhesion(com, provisorio).items():
-        operaciones[i][0].add(c)
-        operaciones[i][1].add("adhesión")
+    _sumar_con_tope(operaciones, _adhesion(com, provisorio), "adhesión", [len(cs) for cs, _ in operaciones])
 
     # Capa G: llegadas raras (se calcula con las operaciones ya completadas por E)
+    base_g = [len(cs) for cs, _ in operaciones]      # el tope cuenta todas las pasadas juntas
     for _ in range(PASADAS_RAREZA):
         provisorio = {c: i for i, (cuentas, _) in enumerate(operaciones) for c in sorted(cuentas)}
         nuevas = _llegadas_raras(com, provisorio)
-        if not nuevas:
+        if not nuevas or not _sumar_con_tope(operaciones, nuevas, "llegadas raras", base_g):
             break
-        for c, i in nuevas.items():
-            operaciones[i][0].add(c)
-            operaciones[i][1].add("llegadas raras")
 
     # Capa H: tanda de creación (solo si hay metadata de cuentas)
     if metadata_cuentas is not None and not metadata_cuentas.empty:
         provisorio = {c: i for i, (cs, _) in enumerate(operaciones) for c in sorted(cs)}
-        for c, i in _tanda_de_creacion(com, metadata_cuentas, provisorio).items():
-            operaciones[i][0].add(c)
-            operaciones[i][1].add("tanda de creación")
+        _sumar_con_tope(operaciones, _tanda_de_creacion(com, metadata_cuentas, provisorio),
+                        "tanda de creación", [len(cs) for cs, _ in operaciones])
 
     # Etiquetas op01, op02... de la operación más grande a la más chica
     operaciones.sort(key=lambda x: -len(x[0]))

@@ -146,3 +146,16 @@ def test_red_de_respuestas_suelta_a_la_cuenta_de_una_sola_respuesta():
     filas.append(_fila(i, "p1", "casual", BASE + i, "hola", resp="c1"))
     grupos = coordinacion._grupos_por_red_de_respuestas(pd.DataFrame(filas))
     assert len(grupos) == 1 and "casual" not in grupos[0] and set(red) <= grupos[0]
+
+
+def test_tope_de_suma_no_multiplica_la_operacion():
+    """Una capa de "suma" (E, G, H) que propone más cuentas que las que la operación ya tiene
+    dejó de ser una señal específica: no se suma ninguna. Con pocas candidatas, entran todas."""
+    from pipeline import coordinacion
+    operaciones = [({"a", "b", "c", "d", "e", "f"}, {"texto/tiempo/respuestas"})]
+    muchas = {f"genuina{i}": 0 for i in range(20)}
+    assert coordinacion._sumar_con_tope(operaciones, muchas, "prueba", [6]) == 0
+    assert len(operaciones[0][0]) == 6
+    pocas = {"n1": 0, "n2": 0, "n3": 0}
+    assert coordinacion._sumar_con_tope(operaciones, pocas, "prueba", [6]) == 3
+    assert len(operaciones[0][0]) == 9 and "prueba" in operaciones[0][1]
