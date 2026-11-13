@@ -1,24 +1,30 @@
 # Costo y escala: de 150.000 comentarios a millones por día
 
 Todos los números de este documento salen de mediciones propias en una MacBook (Apple M5,
-10 núcleos, 16 GB de RAM), salvo donde dice **supuesto**. Los scripts que los generan están
-en `evaluacion/`.
+10 núcleos, 16 GB de RAM), salvo donde dice **supuesto**. Los tiempos y el costo de IA del set final
+salen de [`entrega/costo.json`](../entrega/costo.json); el resto, de los scripts de `evaluacion/`.
 
 ## 1. Lo que cuesta hoy (set final, 150.000 comentarios)
 
-| Etapa | Segundos (GPU de la Mac) | Segundos (solo CPU) | Qué hace |
-|---|---|---|---|
-| Datos | 0,6 | 0,6 | Leer CSV.gz, limpiar, guardar DuckDB + Parquet |
-| Embeddings | 35 | 130 | 49.677 textos distintos (de 150.000 comentarios) |
-| Narrativas | 71 | 63 | UMAP + HDBSCAN + votos de hilos + Leiden + ruido |
-| Postura | 0,6 | 0,4 | 2 bandos por narrativa (grafo de respuestas) |
-| Coordinación | 4,1 | 3,4 | Pares de cuentas + red de respuestas + hashtag propio |
-| **Total** | **≈111** | **≈141** | Con cache: ≈20 s. Entre corridas varía de 108 a 120 s |
+Corrida desde cero (sin cache), con los embeddings en la GPU integrada de la Mac:
 
-- **IA:** 0 tokens y US$ 0 en la entrega (corre sin IA). Con IA serían ~12 llamadas a Claude Haiku
-  (una por narrativa, ~1.000 tokens de entrada y ~150 de salida cada una): unos US$ 0,002 por corrida,
-  o sea **US$ 0,000014 por cada 1.000 comentarios** (precio por token en `pipeline/ia.py`).
-- **Cómputo:** ≈0,74 ms por comentario con GPU y ≈0,94 ms solo con CPU. Con una VM de 8 a 10 núcleos
+| Etapa | Segundos | Qué hace |
+|---|---|---|
+| Datos | 0,5 | Leer CSV.gz, limpiar, guardar DuckDB + Parquet |
+| Embeddings | 39,0 | Solo los textos distintos (alrededor de un tercio de los comentarios) |
+| Narrativas | 68,0 | UMAP + HDBSCAN + votos de hilos + Leiden + ruido por vecinos |
+| Coordinación | 4,5 | Pares de cuentas + red de respuestas + hashtag propio + llegadas raras |
+| Postura | 0,8 | 2 bandos por narrativa + regla de polaridad (lee la caché de IA) |
+| **Total** | **113** | Solo con CPU tarda más: los embeddings son la etapa que más se alarga |
+
+- **IA:** con el gateway son **6 llamadas por narrativa** (3 modelos × 2 órdenes de los bandos). En
+  el set final: 72 respuestas, 117.915 tokens y **US$ 0,187 a precio de lista**, o sea
+  **US$ 0,0012 por cada 1.000 comentarios** y unos US$ 0,016 por narrativa. El costo **no crece con
+  el volumen**: depende de cuántas narrativas hay, no de cuántos comentarios. Cada re-corrida cuesta
+  **US$ 0**, porque lee las respuestas de la caché versionada (`modelos/cache_ia.json`). El precio
+  por token de cada modelo está en `pipeline/ia.py`; la cuenta usada está en la capa gratis, así que
+  `usd_ia` es lo que costaría pagarlo.
+- **Cómputo:** ≈0,75 ms por comentario (113 s para 150.000). Con una VM de 8 a 10 núcleos
   a US$ 0,30 por hora (**supuesto**, precio típico on-demand), son ≈1 s por cada 1.000 comentarios,
   o sea **≈US$ 0,0001 por cada 1.000 comentarios**.
 - **Almacenamiento:** el set de práctica (200.000 comentarios) pesa 4,6 MB en CSV.gz, 14 MB como
@@ -48,8 +54,11 @@ copiamos la idea de comprimir el Parquet con zstd.
 | Embeddings | Lineal en textos **distintos** (los repetidos se reutilizan) | Ninguno: se paraleliza por lotes |
 | UMAP + HDBSCAN | Más que lineal y en memoria | **El cuello de botella**: no se puede re-agrupar todo cada vez |
 | Votos de hilos + Leiden | Lineal en respuestas | Ninguno (grafo de cientos de nodos) |
+| Ruido por vecinos | Cada texto suelto se compara contra todos los textos distintos (producto de matrices, por tandas) | Crece cuadrático: a esa escala los vecinos se buscan en el índice ANN |
 | Coordinación (pares) | Cuadrático **dentro** de cada franja de 15 min | Acotado: las franjas con >30 cuentas se ignoran |
 | Coordinación (red de respuestas) | Lineal en respuestas | Ninguno |
+| Coordinación (llegadas raras) | Lineal en comentarios (se agrupa por publicación y franja) | Ninguno |
+| IA | 6 llamadas por narrativa, no por comentario | Ninguno: no depende del volumen |
 
 ## 3. Diseño para millones de comentarios por día
 
@@ -82,8 +91,11 @@ copiamos la idea de comprimir el Parquet con zstd.
    `AggregatingMergeTree` o Flink). Los pares que se repiten en 3 o más publicaciones distintas
    pasan al grafo. Para las copias exactas o casi exactas se usa MinHash + LSH en vez de comparar
    todos contra todos.
-6. **IA:** sigue siendo 1 llamada por narrativa **nueva**, no por comentario. El gasto de IA no
-   depende del volumen sino de cuántas narrativas aparecen.
+6. **Ruido en vivo:** la regla de hoy (¿los vecinos más parecidos participan de hilos?) se
+   responde con el mismo índice ANN, guardando por cada texto cuántas copias tiene y cuántas están
+   en hilos. Es un diseño, no está medido.
+7. **IA:** siguen siendo 6 llamadas por narrativa **nueva**, no por comentario. El gasto de IA no
+   depende del volumen sino de cuántas narrativas aparecen, y las respuestas quedan en la caché.
 
 ### Cuánto costaría (con nuestras mediciones)
 
@@ -91,14 +103,15 @@ Para **1 millón de comentarios por día**, con ~33% de textos distintos (lo med
 
 | Concepto | Cálculo | Por día |
 |---|---|---|
-| Embeddings en CPU | 330.000 textos × 2,6 ms | ≈14 min de una VM |
+| Embeddings en CPU | 330.000 textos × 2,6 ms (medido el 12/11) | ≈14 min de una VM |
 | Asignación ANN | 1.000.000 × 0,27 µs | < 1 s |
-| Re-agrupado horario | ~10% sin narrativa = 100.000/día, en 24 lotes de ~4.000 | ≈5 min de una VM (**estimado**: hoy agrupar 50.000 textos tarda 63 a 71 s; se toma un margen amplio) |
-| Coordinación | lineal, ≈4 s por cada 150.000 | ≈27 s |
-| IA | ~10 narrativas nuevas × US$ 0,0002 | ≈US$ 0,002 |
+| Re-agrupado horario | ~10% sin narrativa = 100.000/día, en 24 lotes de ~4.000 | ≈5 min de una VM (**estimado**: hoy la etapa de narrativas completa tarda 68 s para el set final; se toma un margen amplio) |
+| Coordinación | lineal, 4,5 s por cada 150.000 | ≈30 s |
 | **Total cómputo** | ≈20 min de una VM de 8 a 10 núcleos a US$ 0,30/h (**supuesto**) | **≈US$ 0,10** |
+| IA | ~10 narrativas nuevas por día (**supuesto**) × US$ 0,016 a precio de lista | ≈US$ 0,16 |
 
-Eso da **≈US$ 0,0001 por cada 1.000 comentarios**: una sola VM chica alcanza para varios millones
-por día. Lo que más crece es el almacenamiento (~1,5 KB de embedding por texto distinto, unos
+El cómputo da **≈US$ 0,0001 por cada 1.000 comentarios**: una sola VM chica alcanza para varios
+millones por día. La IA suma unos US$ 0,16 por día si aparecen 10 narrativas nuevas, sin importar
+cuántos comentarios lleguen: a ese volumen, menos de US$ 0,0002 por cada 1.000 comentarios. Lo que más crece es el almacenamiento (~1,5 KB de embedding por texto distinto, unos
 500 MB por día por millón de comentarios), que en ClickHouse se comprime y se puede guardar con
 menos precisión (float16) si hace falta.

@@ -2,29 +2,36 @@
 
 El set final tiene **otros temas, otras narrativas y otras campañas**. Para estimar cómo nos va ahí,
 simulamos esa situación con el set de práctica y medimos todo con el script oficial del jurado.
-Todo se corre con un comando (`uv run python evaluacion/generalizacion.py`, unos 15 minutos) y los
-números quedan en [`experimentos/generalizacion.csv`](../experimentos/generalizacion.csv).
-Todas las corridas son sin IA y con el mismo código que generó la entrega.
+Todo se corre con un comando (`uv run python evaluacion/generalizacion.py`, tarda varios minutos) y
+los números quedan en [`experimentos/generalizacion.csv`](../experimentos/generalizacion.csv).
 
-## Resultados
+Esta tabla se regeneró el 13/11 con todo lo de hoy integrado (ruido por vecinos en hilos y capa G de
+coordinación) **menos la IA**: todas las corridas usan `--sin-ia`, así que la polaridad de cada
+narrativa la decide "el bando más grande".
+
+## Resultados (sin IA)
 
 | Experimento | Narrativas /30 | B-cubed | Ruido F1 | Postura F1 | Origen | Coordinación /25 | Total /55 |
 |---|---|---|---|---|---|---|---|
-| **Referencia**: práctica completa | 29,00 | 0,981 | 0,952 | 0,916 | 1,00 | 22,98 | 51,98 |
-| Tema afuera: **colectivo** | 28,13 | 0,981 | 0,961 | 0,766 | 1,00 | (ver abajo) | — |
-| Tema afuera: **hospital** | 29,24 | 0,973 | 0,942 | 0,986 | 1,00 | (ver abajo) | — |
-| Tema afuera: **litio** | 28,72 | 0,959 | 0,872 | 0,984 | 1,00 | 23,80 | 52,52 |
-| Solo los **primeros 10 días** | 29,14 | 0,983 | 0,960 | 0,930 | 1,00 | 22,77 | 51,91 |
-| Semilla 1 | 29,00 | 0,981 | 0,953 | 0,916 | 1,00 | 22,90 | 51,90 |
-| Semilla 2 | 28,99 | 0,981 | 0,952 | 0,916 | 1,00 | 23,20 | 52,19 |
-| Semilla 3 | 28,62 | 0,978 | 0,949 | 0,862 | 1,00 | 22,55 | 51,17 |
-| **Datos sucios** | 29,16 | 0,970 | 0,938 | 0,982 | 1,00 | 22,98 | 52,14 |
+| **Referencia**: práctica completa | 29,23 | 1,000 | 1,000 | 0,872 | 1,00 | 23,99 | 53,22 |
+| Tema afuera: **colectivo** | 25,79 | 1,000 | 1,000 | 0,298 | 1,00 | (ver abajo) | — |
+| Tema afuera: **hospital** | 30,00 | 1,000 | 1,000 | 0,999 | 1,00 | (ver abajo) | — |
+| Tema afuera: **litio** | 29,83 | 0,989 | 1,000 | 0,999 | 1,00 | 24,36 | 54,19 |
+| Solo los **primeros 10 días** | 29,57 | 0,996 | 1,000 | 0,938 | 1,00 | 23,23 | 52,80 |
+| Semilla 1 | 28,62 | 1,000 | 1,000 | 0,770 | 1,00 | 23,77 | 52,39 |
+| Semilla 2 | 29,23 | 1,000 | 1,000 | 0,872 | 1,00 | 24,06 | 53,29 |
+| Semilla 3 | 29,22 | 0,999 | 1,000 | 0,872 | 1,00 | 23,41 | 52,63 |
+| **Datos sucios** | 28,36 | 0,989 | 0,985 | 0,766 | 1,00 | 23,99 | 52,35 |
+
+Con IA, la práctica completa da 53,98 (narrativas 29,99, postura 0,998). El hold-out no se corrió
+con IA: cada experimento arma narrativas distintas y habría que volver a preguntarle a los modelos.
 
 ### Cómo se armó cada experimento
 
-- **Tema afuera:** para cada tema (litio, colectivo, hospital) se entrena el clasificador de ruido
-  **solo con los otros dos** y se corre el pipeline **solo** sobre las publicaciones del tema que quedó
-  afuera. Es lo más parecido al set final: un tema que el pipeline nunca vio.
+- **Tema afuera:** para cada tema (litio, colectivo, hospital) se corre el pipeline **solo** sobre las
+  publicaciones de ese tema. El clasificador de ruido se entrena **solo con los otros dos**, aunque
+  hoy casi no pesa: el ruido lo decide la regla de vecinos en hilos, que no usa etiquetas, y el
+  clasificador queda de respaldo. Es lo más parecido al set final: un tema que el pipeline nunca vio.
 - **Primeros 10 días:** el set final dura 10 días; práctica, 14.
 - **Semillas:** la misma corrida con semillas 1, 2 y 3 en vez de 42 (UMAP, Leiden y muestreos).
 - **Datos sucios:** columnas al revés, una columna extra, 5% de filas duplicadas, 1% de fechas rotas,
@@ -33,31 +40,39 @@ Todas las corridas son sin IA y con el mismo código que generó la entrega.
 ### Coordinación cuando se deja un tema afuera
 
 El F1 de cuentas no sirve tal cual en los subconjuntos por tema, porque las cuentas de campaña también
-comentan "de cobertura" en temas que no son el suyo (1 a 8 comentarios sueltos). Lo que importa es
-si encontramos la campaña que **opera** en ese tema y si marcamos a alguien que no lo es:
+comentan "de cobertura" en temas que no son el suyo (unos pocos comentarios sueltos), y el script las
+cuenta como cuentas a encontrar. Lo que importa es si encontramos la campaña que **opera** en ese tema
+y si marcamos a alguien que no lo es:
 
-| Tema afuera | Campaña que opera ahí | Encontradas | Cuentas genuinas marcadas |
-|---|---|---|---|
-| colectivo | ninguna | — | **0** de 13.558 |
-| hospital | C3 (25 cuentas) | **23 de 25** | **0** de 13.085 |
-| litio | C1 (60) + C2 (30) | **84 de 90** (58 + 26) | 1 de 14.140 |
+| Tema afuera | Campaña que opera ahí | Cuentas marcadas | De campaña | Genuinas marcadas |
+|---|---|---|---|---|
+| colectivo | ninguna | 0 | — | **0** |
+| hospital | C3 (25 cuentas) | 24 | **24** | **0** |
+| litio | C1 (60) + C2 (30) | 88 | **87** (de 90) | 1 |
 
 ## Qué dicen los números
 
-1. **Las narrativas generalizan.** Con un tema nunca visto, el puntaje de narrativas queda entre
-   28,13 y 29,24 (promedio 28,70 contra 29,00): una brecha de **−0,3 puntos (−1%)**. El agrupamiento
-   (B-cubed 0,96 a 0,98) y el origen de las emergentes (3 de 3 siempre) no dependen del tema.
-2. **Lo que más se resiente es el ruido** cuando el clasificador no vio el tema (litio: 0,872). Es la
-   única pieza entrenada con la verdad, y aun así se mantiene por encima de 0,87.
-3. **La coordinación no inventa operaciones:** en el tema sin campañas no marca a nadie, y en los otros
-   la precisión es de 0,99 a 1,00.
-4. **La postura sin IA es la parte más frágil.** La regla "el bando más grande apoya" falla en la
-   narrativa B3 (por eso colectivo da 0,766). Con datos sucios o con 10 días el tamaño de los bandos
-   cambia y B3 a veces sale bien (0,93 a 0,98). Es el lugar donde la IA opcional suma: 1 llamada por
-   narrativa decide qué bando afirma.
-5. **Semillas:** el total varía entre 51,17 y 52,19 (±1%). La entrega usa siempre la semilla 42 y
-   da exactamente el mismo resultado en cada corrida.
-6. **Datos sucios:** el pipeline no se cae y el puntaje no baja (52,14).
+1. **Agrupamiento y ruido mejoran o empatan en los 9 experimentos** respecto de la versión de ayer.
+   B-cubed queda entre 0,989 y 1,000. El ruido da F1 1,000 en 8 de 9; el único que baja es datos
+   sucios (0,985). La regla nueva de ruido no usa etiquetas ni depende del tema, y se nota: con un
+   tema nunca visto ya no hay caída (antes litio daba 0,872).
+2. **El origen** de las emergentes da 3 de 3 en todos los experimentos.
+3. **La postura sin IA es la parte frágil, y en 3 experimentos empeoró fuerte:** tema colectivo
+   (0,298), semilla 1 (0,770) y datos sucios (0,766). En la referencia y en la semilla 2 también bajó
+   un poco (de 0,916 a 0,872). No es que los bandos estén mal armados: en esas narrativas el apoyo
+   real es de ~50%, y "el bando más grande apoya" es una moneda al aire. Un cambio chico en qué
+   comentarios entran a la narrativa alcanza para dar vuelta cuál bando queda más grande, y con eso
+   toda la narrativa queda con la postura invertida.
+4. **Con la polaridad correcta, narrativas da entre 29,7 y 30,0 en los 9 experimentos.** Es una
+   cuenta, no una corrida: la postura vale 6 de los 30 puntos (20%), así que con postura ≈ 1,0 cada
+   fila sube 6 × (1 − postura F1). Elegir bien la polaridad es justo lo que hace la IA: en la
+   práctica completa acierta 13 de 13 narrativas y lleva la postura de 0,872 a 0,998.
+5. **La coordinación no inventa operaciones:** en el tema sin campañas no marca a nadie, y en hospital
+   y litio la precisión es de 0,99 a 1,00. Con otras semillas la precisión baja algo (0,956 con la
+   semilla 1 y 0,931 con la semilla 3; 0,991 con la 2).
+6. **Semillas:** el total sin IA varía entre 52,39 y 53,29. La entrega usa siempre la semilla 42.
+7. **Datos sucios:** el pipeline no se cae. El total (52,35) baja contra la referencia (53,22) por la
+   postura sin IA; agrupamiento, ruido y coordinación casi no se mueven.
 
 ## Hiperparámetros: ¿salen de los datos o de práctica?
 
@@ -65,10 +80,13 @@ si encontramos la campaña que **opera** en ese tema y si marcamos a alguien que
 |---|---|---|
 | Tamaño mínimo de micro-grupo | 0,1% de los textos (mínimo 15) | Sí, escala con el set |
 | Cantidad de narrativas | La decide Leiden con los votos de los hilos | Sí, no se fija |
-| Umbral de ruido | Clasificador con rasgos sin tema (largo, parecido, margen, pregunta) | Entrenado en práctica, validado por tema |
-| Rescate de textos sueltos | Percentil 5 de parecido de cada micro-grupo | Sí, por grupo |
+| Ruido | Un comentario suelto es ruido si sus ~50 vecinos más parecidos participan de hilos menos del 10% de la tasa normal del set | Sí: el umbral es relativo a la tasa de hilos del propio set. No usa etiquetas |
+| Ruido, respaldo | Clasificador entrenado en práctica (largo, parecido, margen, pregunta) | Solo se usa si menos del 2% de los comentarios está en hilos |
+| Rescate de textos sueltos | Narrativa de sus copias en hilos o, si no hay, del micro-grupo más parecido | Sí, por texto |
 | Fecha de origen | ≥5 comentarios del núcleo en 6 h | Fijo, pero no depende del tema |
 | Coordinación: repetición | ≥3 publicaciones y ≥30% de la actividad de la cuenta | Fijo (es la definición de "evidencia repetida") |
 | Coordinación: franja | Se ignoran momentos con >30 cuentas en 15 min (virales) | Fijo |
 | Red de respuestas | ≥1,6 conexiones por cuenta (un árbol tiene ~1) | Relativo a la estructura de árbol |
 | Hashtag propio | ≥2/3 de los usos de una operación | Relativo a la operación |
+| Llegadas raras (capa G) | Puntaje ≥ 1,4, densidad ≥ 0,03 por publicación de la cuenta, ≥3 publicaciones en común | Fijo, elegido en práctica. El peso 1/(presentes − 1) sí es relativo a cuánta gente hay |
+| Polaridad con IA | IA si ≥2 modelos votan y coinciden; si no, puntos (operación con ≥80% en un bando, bando más grande con ≥54%) | Fijo, elegido en práctica |
