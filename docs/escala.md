@@ -13,7 +13,7 @@ Corrida desde cero (sin cache), con los embeddings en la GPU integrada de la Mac
 | Datos | 0,5 | Leer CSV.gz, limpiar, guardar DuckDB + Parquet |
 | Embeddings | 38,4 | Solo los textos distintos (alrededor de un tercio de los comentarios) |
 | Narrativas | 62,6 | UMAP + HDBSCAN + votos de hilos + Leiden + ruido por vecinos |
-| Coordinación | 5,3 | Pares de cuentas + red de respuestas + hashtag propio + llegadas raras + tanda de creación |
+| Coordinación | 5,2 | Pares de cuentas + red de respuestas + hashtag propio + llegadas raras + tanda de creación |
 | Postura | 0,8 | 2 bandos por narrativa + regla de polaridad (lee la caché de IA) |
 | **Total** | **108** | Solo con CPU tarda más: los embeddings son la etapa que más se alarga |
 

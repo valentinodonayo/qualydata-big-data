@@ -37,7 +37,7 @@ Toma el set del desafío y responde, sin intervención manual, las dos preguntas
 
 ### Resultados
 
-**Set de práctica, puntaje automático con el script oficial: 54,63 de 55** (narrativas 29,99 de 30; coordinación 24,64 de 25). Sin IA saca 53,87. La línea base del desafío saca 16,95.
+**Set de práctica, puntaje automático con el script oficial: 54,71 de 55** (narrativas 29,99 de 30; coordinación 24,72 de 25). Sin IA saca 53,95. La línea base del desafío saca 16,95.
 
 | Medida | Valor |
 |---|---|
@@ -45,23 +45,27 @@ Toma el set del desafío y responde, sin intervención manual, las dos preguntas
 | Detección de ruido (F1) | 1,000 |
 | Origen de las 3 narrativas emergentes | 1,000 |
 | Postura (macro-F1) | 0,998 (acierta el lado de las 13 narrativas) |
-| Cuentas coordinadas (F1) | 0,987: 113 de 115 cuentas de campaña, 1 sola genuina marcada entre 15.876 |
+| Cuentas coordinadas (F1) | 0,991: 113 de 115 cuentas de campaña y ninguna genuina marcada entre 15.876 |
 | Operaciones (B-cubed F1) | 0,983 (las 3 campañas, cada una entera en una operación) |
 
 **Set final (150.000 comentarios, 12.002 cuentas, 10 días):**
 
 - 12 narrativas en tres temas (seguridad, festival, dique); 3 nacen con el período ya empezado.
 - 20,7% de ruido.
-- 3 operaciones coordinadas, 98 cuentas: una empuja que el dique es la solución para el agua (50 cuentas creadas en la misma semana, textos plantilla), otra que el festival es un derroche (26 cuentas antiguas con actividad de cobertura) y otra el cierre de la comisaría del norte (22 cuentas creadas en la misma semana, activas de madrugada).
+- 3 operaciones coordinadas, 97 cuentas: una empuja que el dique es la solución para el agua (50 cuentas creadas en la misma semana, textos plantilla), otra que el festival es un derroche (25 cuentas antiguas con actividad de cobertura) y otra el cierre de la comisaría del norte (22 cuentas creadas en la misma semana, activas de madrugada).
 - **108 segundos desde cero** en una notebook (0,72 s por cada mil comentarios). IA: 6 llamadas por narrativa, US$ 0,19 a precio de lista en total (US$ 0,0012 por cada mil comentarios) y US$ 0 en cada re-corrida, porque las respuestas quedan guardadas.
 
 ### Generalización y robustez
 
 Cada cambio se aceptó midiendo en el set de práctica y en un hold-out: un tema entero que el pipeline nunca vio, solo los primeros 10 días, otras semillas y datos ensuciados a propósito. La tabla completa está en `docs/generalizacion.md` y cada corrida queda anotada en `experimentos/runs.csv`, incluidas las ideas que se descartaron (`reportes/mejoras.md`).
 
+### Probado con otros textos
+
+Además del hold-out, lo corrimos sobre recortes y mezclas de los sets oficiales (10%, 25%, 50%, práctica y final juntos, sin campañas, fechas corridas, todo en mayúsculas) y sobre un set inventado con otros temas (un basural, la tarifa de la luz, una escuela, un club) con verdad propia. El agrupamiento en narrativas se sostiene: B-cubed entre 0,98 y 1,00 y ruido 1,000 en todos los casos que respetan la estructura del set oficial. Lo que no se sostiene está documentado en "Límites conocidos" del README: la coordinación depende de la dinámica del set.
+
 ### Reproducible
 
-Semillas fijas, versiones exactas en `uv.lock`, validador de formato y 45 tests. Un clon limpio corre con un comando y no necesita ninguna clave: verificamos que sin clave salen los mismos tres archivos, byte a byte.
+Semillas fijas, versiones exactas en `uv.lock`, validador de formato y 48 tests. Un clon limpio corre con un comando y no necesita ninguna clave: verificamos que sin clave salen los mismos tres archivos, byte a byte.
 
 ### Tablero
 
