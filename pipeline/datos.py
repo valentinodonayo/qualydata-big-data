@@ -13,6 +13,7 @@ que se puede abrir desde cualquier herramienta (pandas, Spark, BigQuery...).
 import csv
 import gzip
 import json
+import logging
 from pathlib import Path
 
 import duckdb
@@ -54,13 +55,27 @@ def _leer_crudo(con, nombre: str, ruta, calidad: dict):
         con.execute(f"CREATE OR REPLACE TABLE {tabla} ({definicion})")
         calidad[f"{nombre}_archivo_faltante"] = True
         return
-    con.execute(f"""
-        CREATE OR REPLACE TABLE {tabla} AS
-        SELECT * FROM read_csv(?, header=true, all_varchar=true, store_rejects=true,
-                               strict_mode=false, null_padding=true,
-                               rejects_table='rechazos_{nombre}',
-                               rejects_scan='escaneos_{nombre}')
-    """, [str(ruta)])
+    try:
+        con.execute(f"""
+            CREATE OR REPLACE TABLE {tabla} AS
+            SELECT * FROM read_csv(?, header=true, all_varchar=true, store_rejects=true,
+                                   strict_mode=false, null_padding=true,
+                                   rejects_table='rechazos_{nombre}',
+                                   rejects_scan='escaneos_{nombre}')
+        """, [str(ruta)])
+    except Exception as error:
+        # El archivo existe pero no se puede leer (0 bytes, .gz cortado, no es un CSV...).
+        # Los comentarios son imprescindibles: ahí dejamos que falle (correr.py usa el lector de
+        # respaldo). Pero un archivo SECUNDARIO roto (cuentas, publicaciones, fuentes) no puede
+        # tirar abajo toda la corrida: seguimos como si el archivo no estuviera.
+        if nombre == "comentarios":
+            raise
+        logging.warning("Datos: no se pudo leer %s (%s); sigo como si no estuviera",
+                        ruta.name, str(error).splitlines()[0][:120])
+        definicion = ", ".join(f'"{c}" VARCHAR' for c in columnas)
+        con.execute(f"CREATE OR REPLACE TABLE {tabla} ({definicion})")
+        calidad[f"{nombre}_archivo_ilegible"] = True
+        return
     calidad[f"{nombre}_filas_rechazadas"] = con.execute(
         f"SELECT count(*) FROM rechazos_{nombre}").fetchone()[0]
     # Columnas que faltan en el archivo -> las agregamos vacías para que lo demás no falle

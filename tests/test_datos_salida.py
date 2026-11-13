@@ -78,3 +78,20 @@ def test_validador_detecta_errores(tmp_path):
     assert any("repetidos" in p for p in problemas)
     assert any("falta cuentas.csv" in p for p in problemas)
     assert any("falta costo.json" in p for p in problemas)
+
+
+def test_archivo_secundario_roto_no_tira_la_corrida(tmp_path):
+    """Un cuentas.csv.gz de 0 bytes (no es un .gz válido) no puede dejar la entrega vacía."""
+    carpeta = tmp_path / "set"
+    carpeta.mkdir()
+    _escribir_gz(carpeta / "comentarios.csv.gz", (
+        "comentario_id,publicacion_id,cuenta_id,fecha,texto,respuesta_a,me_gusta\n"
+        "c1,p1,u1,2026-10-05T10:00:00-03:00,hola mundo,,3\n"
+        "c2,p1,u2,2026-10-05T10:05:00-03:00,chau mundo,c1,0\n"
+    ))
+    (carpeta / "cuentas.csv.gz").write_bytes(b"")          # archivo roto
+    d = datos.cargar(carpeta, tmp_path / "cache")
+    assert list(d["comentarios"]["comentario_id"]) == ["c1", "c2"]   # los comentarios se leen igual
+    assert d["cuentas"].empty                                         # las cuentas quedan vacías
+    assert d["calidad"]["cuentas_archivo_ilegible"] is True           # y queda anotado en calidad.json
+    assert set(datos.todas_las_cuentas(d)) == {"u1", "u2"}            # las cuentas salen de los comentarios
