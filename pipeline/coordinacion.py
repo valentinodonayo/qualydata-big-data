@@ -22,7 +22,8 @@ que se comporta junto más de lo que el azar explicaría. Buscamos 4 tipos de se
      15 min pesa 1/(cuentas presentes - 1): coincidir con pocas pesa mucho, en un momento viral
      casi nada. Se suma si el puntaje hacia la operación es >= 1,4, si ese puntaje es >= 0,03 por
      publicación en la que comenta (densidad: una cuenta muy activa junta puntaje por volumen, no
-     por coordinación) y si coincidió (en franjas de 60 min) en >= 3 publicaciones distintas. Rescata cuentas de "cobertura" con textos variados.
+     por coordinación) y si coincidió (en franjas de 60 min) en >= 2 publicaciones distintas.
+     Se repite hasta 3 veces: una cuenta recién sumada puede delatar a otra. Rescata cuentas de "cobertura" con textos variados.
 
   D) Red de respuestas "con ciclos": en una charla normal las respuestas forman un
      árbol (cada uno contesta a uno). Un grupo coordinado se responde entre todos y
@@ -61,6 +62,8 @@ MIN_RESPUESTAS_ADHESION = 3    # capa E: respuestas intercambiadas con miembros 
 MIN_MIEMBROS_ADHESION = 2      # ...con al menos 2 miembros distintos
 RAREZA_MINIMA = 1.4           # capa G: suma de pesos 1/(presentes-1) hacia la operación
 DENSIDAD_RAREZA = 0.03         # capa G: ...y ese puntaje dividido las publicaciones de la cuenta
+MIN_PUBLICACIONES_RAREZA = 2    # capa G: publicaciones distintas en común (franjas de 60 min)
+PASADAS_RAREZA = 3              # capa G: se repite con las operaciones ya agrandadas (tope)
 FRANJA_LARGA_S = 60 * 60       # capa G: franja para contar publicaciones distintas en común
 SEMILLA = int(os.environ.get("QUALY_SEMILLA", "42"))   # fija; se cambia solo para medir estabilidad
 
@@ -263,7 +266,7 @@ def _llegadas_raras(com, grupo):
     for c in sorted(puntaje):
         candidatas = [(p, op) for op, p in puntaje[c].items()
                       if p >= RAREZA_MINIMA and p / max(1, actividad.get(c, 1)) >= DENSIDAD_RAREZA
-                      and len(publicaciones[c][op]) >= MIN_PUBLICACIONES]
+                      and len(publicaciones[c][op]) >= MIN_PUBLICACIONES_RAREZA]
         if candidatas:
             nuevas[c] = max(candidatas, key=lambda x: (x[0], -x[1]))[1]
     nuevas.pop(CUENTA_DESCONOCIDA, None)
@@ -301,10 +304,14 @@ def detectar(com: pd.DataFrame):
         operaciones[i][1].add("adhesión")
 
     # Capa G: llegadas raras (se calcula con las operaciones ya completadas por E)
-    provisorio = {c: i for i, (cuentas, _) in enumerate(operaciones) for c in sorted(cuentas)}
-    for c, i in _llegadas_raras(com, provisorio).items():
-        operaciones[i][0].add(c)
-        operaciones[i][1].add("llegadas raras")
+    for _ in range(PASADAS_RAREZA):
+        provisorio = {c: i for i, (cuentas, _) in enumerate(operaciones) for c in sorted(cuentas)}
+        nuevas = _llegadas_raras(com, provisorio)
+        if not nuevas:
+            break
+        for c, i in nuevas.items():
+            operaciones[i][0].add(c)
+            operaciones[i][1].add("llegadas raras")
 
     # Etiquetas op01, op02... de la operación más grande a la más chica
     operaciones.sort(key=lambda x: -len(x[0]))

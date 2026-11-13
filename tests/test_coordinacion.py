@@ -88,3 +88,22 @@ def test_llegadas_raras_suma_la_cuenta_de_cobertura_y_no_la_muy_activa():
         filas.append(_fila(i, f"s{g}", "activa", BASE + g * 3600 + 30 * 86400, "texto"))
     nuevas = coordinacion._llegadas_raras(pd.DataFrame(filas), grupo)
     assert nuevas == {"cobertura": 0}
+
+
+def test_llegadas_raras_segunda_pasada():
+    """'b' llega a solas con los miembros; 'c' llega a solas solo con 'b'.
+    En la primera pasada entra 'b'; en la segunda, 'c' (por coincidir con 'b', ya miembro)."""
+    filas, i = [], 0
+    grupo = {"m1": 0}
+    for k in range(3):
+        for cuenta, dt in (("m1", 0), ("b", 60)):
+            i += 1
+            filas.append(_fila(i, f"x{k}", cuenta, BASE + k * 86400 + dt, "texto"))
+        for cuenta, dt in (("b", 0), ("c", 60)):
+            i += 1
+            filas.append(_fila(i, f"y{k}", cuenta, BASE + k * 86400 + 20000 + dt, "texto"))
+    com = pd.DataFrame(filas)
+    primera = coordinacion._llegadas_raras(com, grupo)
+    assert primera == {"b": 0}
+    segunda = coordinacion._llegadas_raras(com, {**grupo, **primera})
+    assert segunda == {"c": 0}
