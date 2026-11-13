@@ -90,6 +90,53 @@ def _micro_grupos(emb, unicos, carpeta_cache):
     return etiquetas
 
 
+MODULARIDAD_REPARTIR = 0.3   # una comunidad se vuelve a partir solo si adentro hay grupos así de separados
+VOTOS_MIN_REPARTIR = 100     # ...y solo si tiene suficientes votos para creerle (con pocos, es azar)
+
+
+def _repartir_fusionadas(G, comunidad):
+    """Afinado: separa las comunidades donde Leiden pegó dos narrativas distintas.
+
+    Por qué hace falta: Leiden (modularidad) tiene un "límite de resolución": cuanto más
+    grande es el grafo entero, más tiende a pegar dos comunidades vecinas aunque casi no
+    se voten entre sí. Lo vimos juntando práctica + final (350.000 comentarios, 25 narrativas):
+    dos narrativas del mismo tema quedaban en una sola (salían 24).
+
+    Cómo se arregla: se mira cada comunidad POR SEPARADO y se le pide a Leiden que la parta.
+    - Una narrativa de verdad no se deja partir: sus micro-grupos se votan todos con todos
+      (modularidad de la partición ~0,00 en práctica y final; hasta 0,13 en muestras chicas).
+    - Dos narrativas pegadas se parten limpio (medimos 0,40: solo 3% de votos cruzan).
+    El umbral 0,3 queda lejos de los dos casos. Con menos de VOTOS_MIN_REPARTIR votos no se
+    toca nada: en una comunidad con 20 votos la modularidad sube sola (medimos 0,24 en una
+    narrativa real de una muestra del 5%) y partiríamos narrativas buenas.
+    En práctica y en el final solos no cambia nada (entrega idéntica byte a byte).
+    """
+    import leidenalg as la
+    comunidad = comunidad.copy()
+    for _ in range(3):                       # por si una comunidad tenía 3 o más narrativas pegadas
+        hubo_cambio = False
+        for k in sorted(set(comunidad.tolist())):
+            miembros = np.where(comunidad == k)[0]
+            if len(miembros) < 2:
+                continue
+            sub_grafo = G.subgraph(miembros.tolist())
+            if sub_grafo.ecount() == 0 or sum(sub_grafo.es["weight"]) < VOTOS_MIN_REPARTIR:
+                continue
+            sub = la.find_partition(sub_grafo, la.RBConfigurationVertexPartition, weights="weight",
+                                    resolution_parameter=1.0, seed=SEMILLA)
+            if len(sub) < 2 or sub.modularity < MODULARIDAD_REPARTIR:
+                continue
+            partes = np.array(sub.membership)
+            for parte in range(1, int(partes.max()) + 1):     # la parte 0 conserva el número k
+                comunidad[miembros[partes == parte]] = comunidad.max() + 1
+            hubo_cambio = True
+            logging.info("Narrativas: una comunidad tenía %s narrativas pegadas (modularidad interna %.2f); se separan",
+                         len(sub), sub.modularity)
+        if not hubo_cambio:
+            break
+    return comunidad
+
+
 def _unir_con_hilos(micro_com, pos_padre, es_larga_resp, K):
     """Paso 2: grafo de votos entre micro-grupos + Leiden. Devuelve narrativa por micro-grupo."""
     import igraph as ig
@@ -105,12 +152,48 @@ def _unir_con_hilos(micro_com, pos_padre, es_larga_resp, K):
     G = ig.Graph(n=K, edges=list(votos.keys()), edge_attrs={"weight": list(votos.values())})
     particion = la.find_partition(G, la.RBConfigurationVertexPartition, weights="weight",
                                   resolution_parameter=1.0, seed=SEMILLA)
-    comunidad = np.array(particion.membership)
+    comunidad = _repartir_fusionadas(G, np.array(particion.membership))
     # Paso 3: un micro-grupo sin ningún voto no participa de discusiones -> ruido
     comunidad[grado == 0] = -1
     logging.info("Narrativas: %s votos entre micro-grupos -> %s narrativas, %s micro-grupos de ruido",
                  sum(votos.values()), len(set(comunidad) - {-1}), int((grado == 0).sum()))
     return comunidad
+
+
+VECINOS_SIN_HILOS = 5      # respaldo sin hilos: cada micro-grupo se conecta con sus 5 más parecidos
+
+
+def _unir_por_parecido(emb, unicos, etiqueta_unico, K):
+    """RESPALDO (set SIN hilos): une los micro-grupos por parecido entre sus centros.
+
+    Sin respuestas no hay votos, y sin votos TODO quedaba como ruido (0 narrativas).
+    Acá cada micro-grupo se conecta con sus VECINOS_SIN_HILOS micro-grupos más parecidos
+    y Leiden arma las comunidades. Es bastante peor que los votos de los hilos (el parecido
+    junta bien por TEMA pero mezcla narrativas del mismo tema: B-cubed 0,53 en una muestra
+    de práctica sin hilos, contra 0,99 con hilos), pero es mucho mejor que entregar todo vacío.
+    Solo se usa cuando no hay ni un solo voto: en práctica y en el final no corre nunca.
+    """
+    import igraph as ig
+    import leidenalg as la
+    if K < 2:
+        return np.zeros(K, dtype=int)
+    V = emb[unicos]
+    centros = np.vstack([V[etiqueta_unico == k].mean(0) for k in range(K)])
+    centros /= np.linalg.norm(centros, axis=1, keepdims=True)
+    parecido = centros @ centros.T
+    np.fill_diagonal(parecido, -1.0)               # un micro-grupo no es vecino de sí mismo
+    aristas, pesos = [], []
+    for i in range(K):
+        normal = (parecido[i].sum() + 1.0) / (K - 1)   # parecido promedio con los demás
+        for j in np.argsort(-parecido[i])[:min(VECINOS_SIN_HILOS, K - 1)]:
+            aristas.append((i, int(j)))
+            pesos.append(max(float(parecido[i, j] - normal), 1e-6))   # pesa lo que supera a lo normal
+    G = ig.Graph(n=K, edges=aristas, edge_attrs={"weight": pesos}).simplify(combine_edges="sum")
+    particion = la.find_partition(G, la.RBConfigurationVertexPartition, weights="weight",
+                                  resolution_parameter=1.0, seed=SEMILLA)
+    logging.warning("Narrativas: el set no tiene hilos (ningún voto); uso el RESPALDO por parecido "
+                    "entre micro-grupos -> %s narrativas (menos preciso que con hilos)", len(particion))
+    return np.array(particion.membership)
 
 
 def _fecha_origen(ts, sims):
@@ -211,6 +294,20 @@ def _filtrar_ruido(final, com, emb, emb_indice, pos_padre, modelo_ruido):
 
 
 VECINOS_RUIDO = 50         # cuántos comentarios parecidos miramos para decidir si uno suelto es ruido
+VECINOS_RUIDO_MIN = 25     # en sets chicos se miran menos vecinos (ver vecinos_para_ruido), nunca menos de 25
+COMENTARIOS_POR_VECINO = 400   # 1 vecino cada 400 comentarios con contenido: desde 20.000 ya son los 50 de siempre
+
+
+def vecinos_para_ruido(comentarios_con_contenido: int) -> int:
+    """Cuántos vecinos mirar según el tamaño del set.
+
+    Con 50 vecinos fijos, en un set chico (menos de ~10.000 comentarios) los 50 más parecidos
+    a un comentario de ruido ya incluyen comentarios de narrativas (no hay 50 "ruidos" parecidos),
+    y el ruido se escapa: con 8.000 comentarios el F1 de ruido bajaba de 1,00 a 0,86.
+    Menos de 25 tampoco sirve: empiezan a caer como ruido comentarios de narrativa por azar.
+    Con 20.000 comentarios o más (práctica y final) el resultado es 50: no cambia nada.
+    """
+    return int(min(VECINOS_RUIDO, max(VECINOS_RUIDO_MIN, comentarios_con_contenido // COMENTARIOS_POR_VECINO)))
 FRACCION_RUIDO = 0.1       # ruido = sus vecinos participan de hilos menos del 10% de lo normal en el set
 MIN_TASA_HILOS = 0.02      # si menos del 2% de los comentarios está en hilos, la señal no sirve (respaldo)
 
@@ -237,7 +334,8 @@ def tasa_hilos_vecinos(emb, emb_indice, con_contenido, en_hilo, consultar):
     V = torch.from_numpy(np.ascontiguousarray(emb[base], dtype=np.float32))
     n_base = torch.from_numpy(n[base].astype(np.float32))
     h_base = torch.from_numpy(h[base].astype(np.float32))
-    k = min(VECINOS_RUIDO, len(base))            # con k textos distintos seguro juntamos ≥ k comentarios
+    objetivo = vecinos_para_ruido(int(con_contenido.sum()))   # 50 salvo en sets chicos
+    k = min(objetivo, len(base))                 # con k textos distintos seguro juntamos ≥ k comentarios
     textos_consulta = np.unique(emb_indice[consultar])
     tasa_texto = np.zeros(U)
     paso = max(1, 100_000_000 // max(len(base), 1))   # de a tandas, para no llenar la memoria
@@ -247,8 +345,8 @@ def tasa_hilos_vecinos(emb, emb_indice, con_contenido, en_hilo, consultar):
         vecinos = torch.topk(parecido, k, dim=1).indices          # ya vienen del más al menos parecido
         n_acum = torch.cumsum(n_base[vecinos], dim=1).numpy()
         h_acum = torch.cumsum(h_base[vecinos], dim=1).numpy()
-        # Cortamos en el primer vecino con el que ya juntamos VECINOS_RUIDO comentarios
-        corte = np.minimum((n_acum < VECINOS_RUIDO).sum(1), k - 1)
+        # Cortamos en el primer vecino con el que ya juntamos los comentarios que buscábamos
+        corte = np.minimum((n_acum < objetivo).sum(1), k - 1)
         filas = np.arange(len(tanda))
         tasa_texto[tanda] = h_acum[filas, corte] / n_acum[filas, corte]
     return tasa_texto[emb_indice[consultar]]
@@ -344,6 +442,9 @@ def detectar(com: pd.DataFrame, emb, emb_indice, carpeta_cache: Path, modelo_rui
 
     # Pasos 2 y 3: unir micro-grupos con los votos de los hilos; los sin votos son ruido
     comunidad = _unir_con_hilos(micro_com, pos_padre, es_resp & ~corta, K) if K else np.array([])
+    if K and (comunidad < 0).all():
+        # Ningún micro-grupo recibió votos (set sin hilos): respaldo por parecido, para no entregar vacío
+        comunidad = _unir_por_parecido(emb, unicos, etiqueta_unico, K)
     narr_com = np.where(micro_com >= 0, comunidad[np.maximum(micro_com, 0)] if K else -1, -1)
 
     # Paso 4: cada hilo lleva la narrativa mayoritaria de sus comentarios con contenido
