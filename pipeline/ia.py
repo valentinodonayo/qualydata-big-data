@@ -434,14 +434,17 @@ MIN_OPERACION = 0.80    # la operación coordinada cuenta si ≥ 80% de sus come
 PUNTOS_OPERACION = 2.0  # cuánto pesa cada señal sin IA (cada modelo que vota pesa 1 punto)
 PUNTOS_MARGEN_GRANDE = 1.5
 PUNTOS_MARGEN_CHICO = 0.5
+PUNTOS_LOCAL = 1.0      # señal local sin IA (postura.senal_local): le gana al margen chico, pierde con el grande
 
 
-def _combinar(votos, tamano, coordinadas=None):
-    """Decide qué bando apoya (0 o 1) juntando tres señales. Devuelve (bando, motivo).
+def _combinar(votos, tamano, coordinadas=None, local=None):
+    """Decide qué bando apoya (0 o 1) juntando cuatro señales. Devuelve (bando, motivo).
 
     votos:       lista de 0/1, un voto por cada modelo que respondió sin contradecirse (puede estar vacía).
     tamano:      [comentarios del bando 0, del bando 1].
     coordinadas: [n0, n1] comentarios de la operación coordinada en cada bando, o None.
+    local:       bando que apoya según la señal local sin IA (0/1), o None si se abstiene
+                 (postura.senal_local: el bando que "refuta" es el que rechaza).
 
     Idea: un error en UNA narrativa cuesta ~0,5 puntos, así que ninguna señal débil decide sola.
     1. Si votaron 2 o más modelos y TODOS coinciden: gana la IA (en práctica, 0 errores así).
@@ -452,6 +455,9 @@ def _combinar(votos, tamano, coordinadas=None):
        - al bando más grande: 1,5 puntos si el margen es grande (≥ 54%: en práctica el bando que
          apoya nunca bajó de 49,5%, así que un bando tan grande casi seguro es el que apoya),
          y si no 0,5 (solo desempata).
+       - 1 punto al bando que indica la señal local (si no se abstuvo): alcanza para ganarle al
+         tamaño cuando los bandos están parejos (0,5), pero no a un margen grande (1,5) ni a la
+         operación coordinada (2).
        Gana el que junta más puntos. Sin IA y sin operación esto es la regla de siempre:
        "el bando más grande apoya".
     """
@@ -472,6 +478,9 @@ def _combinar(votos, tamano, coordinadas=None):
     if operacion is not None:
         puntos[operacion] += PUNTOS_OPERACION
         partes.append(f"operación coordinada en {'AB'[operacion]}")
+    if local in (0, 1):
+        puntos[local] += PUNTOS_LOCAL
+        partes.append(f"señal local (refutación) dice {'AB'[local]}")
     puntos[mayor] += PUNTOS_MARGEN_GRANDE if margen_grande else PUNTOS_MARGEN_CHICO
     partes.append(f"bando más grande {'AB'[mayor]}" + (" con margen grande" if margen_grande else ""))
     ganador = mayor if puntos[0] == puntos[1] else (0 if puntos[0] > puntos[1] else 1)
@@ -624,7 +633,8 @@ def decidir(resumen, crono, ruta_cache=None, huella_datos=""):
                 bando = 1 - bando
             respuestas.append((v["modelo"], bando, e["respuesta"]))
         votos, contradicciones = votos_por_modelo([(m, b) for m, b, _ in respuestas])
-        apoya_es[k], motivo = _combinar(votos, resumen[k]["tamano"], resumen[k].get("coordinadas"))
+        apoya_es[k], motivo = _combinar(votos, resumen[k]["tamano"], resumen[k].get("coordinadas"),
+                                         resumen[k].get("local"))
         if respuestas:
             # Título: el de la primera respuesta que coincide con la decisión final (si ninguna, la primera)
             r = next((r for _, b, r in respuestas if b == apoya_es[k]), respuestas[0][2])
