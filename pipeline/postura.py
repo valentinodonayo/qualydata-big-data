@@ -108,13 +108,27 @@ def calcular_bandos(com, emb, emb_indice, extra):
             mas_cerca = (emb[emb_indice[sin_micro]] @ centros.T).argmax(1)
             bando_com[sin_micro] = [bando[lista[j]] for j in mas_cerca]
 
-        # Ejemplos de cada bando (raíces largas, para que la IA las compare)
+        # Ejemplos de cada bando para la IA: las 12 raíces largas MÁS CENTRALES (más parecidas al
+        # centro del bando), sin repetir texto. Son estables: si otra máquina calcula embeddings con
+        # decimales apenas distintos, salen los mismos ejemplos y la caché de la IA sigue sirviendo.
         ejemplos = []
         for b in (0, 1):
             pos = np.where(en_narr & es_raiz & (bando_com == b))[0]
-            largos = [i for i in pos if len(textos[i].split()) >= 8]
-            elegidos = np.random.default_rng(int(os.environ.get("QUALY_SEMILLA", "42"))).permutation(largos or list(pos))[:12]
-            ejemplos.append([textos[i] for i in elegidos])
+            largos = np.array([i for i in pos if len(textos[i].split()) >= 8] or list(pos), dtype=int)
+            elegidos = []
+            if len(largos):
+                V = emb[emb_indice[largos]]
+                centro = V.mean(0)
+                orden = sorted(range(len(largos)), key=lambda j: (-round(float(V[j] @ centro), 4), textos[largos[j]]))
+                vistos = set()
+                for j in orden:
+                    t = textos[largos[j]]
+                    if t not in vistos:
+                        vistos.add(t)
+                        elegidos.append(t)
+                    if len(elegidos) == 12:
+                        break
+            ejemplos.append(elegidos)
         tamano = [int(((bando_com == b) & en_narr).sum()) for b in (0, 1)]
         resumen[etiqueta] = {"tamano": tamano, "ejemplos": ejemplos}
     logging.info("Postura: bandos armados en %s narrativas", len(resumen))

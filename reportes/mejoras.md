@@ -1,0 +1,44 @@
+# Mejoras de la sesión del 12/11 (21:15 a 22:45): qué se aceptó y qué se descartó
+
+Regla: un cambio se acepta solo si mejora (o no empeora) **en las dos** validaciones: (a) el set de
+práctica completo con el script oficial y (b) el hold-out (`evaluacion/generalizacion.py`: tema dejado
+afuera, primeros 10 días, otras semillas, datos sucios). Todo sin IA, porque en esta sesión no hay
+clave de API. Diagnóstico de partida: [`diagnostico.md`](diagnostico.md).
+
+## Cambios medidos
+
+| Cambio | Práctica antes → después | Hold-out | Decisión |
+|---|---|---|---|
+| Coordinación: el par de cuentas tiene que coincidir en ≥30% de la actividad de **las dos** cuentas (antes, de la menos activa) | 51,98 → **52,06** (precisión de cuentas 0,981 → 0,990; recall igual) | Mejora semillas (+0,07) y datos sucios (+0,08), pero **empeora** tema afuera litio (52,52 → 51,97: pierde 3 cuentas reales de campaña) y primeros 10 días (51,91 → 51,76) | **Revertido** (regla madre). Resultados en `experimentos/generalizacion_pares_descartado.csv` |
+| Postura sin IA: "apoya" = bando con menos negaciones | Acierta 8 de 13 narrativas (hoy: 12 de 13) | — | **Descartado** sin implementar |
+| Postura sin IA: "apoya" = bando al que más le responden | 9 de 13 | — | **Descartado** |
+| Postura sin IA: "apoya" = bando con más raíces | 12 de 13 (igual que hoy) | — | Descartado: no mejora |
+| Coordinación: sumar cuentas que llegan cerca de una operación más de lo esperable por azar (modelo nulo de Poisson, ventanas de 15, 5 y 2 min) | Ninguna cuenta supera lo esperado, ni siquiera las 9 de C2 que se escapan | — | **Descartado**: la señal no existe en estos datos |
+| Tiempo: UMAP con 100 iteraciones en vez de 200 | Aislado, UMAP 60 s → 38 s; pero en el pipeline completo la práctica **baja de 51,98 a 51,70** (otra narrativa queda con la postura invertida) y la etapa no bajó de tiempo | No hizo falta | **Revertido** |
+
+## Cambios que no tocan el puntaje (infraestructura)
+
+| Cambio | Por qué | Verificación |
+|---|---|---|
+| Caché versionada de la IA (`modelos/cache_ia.json`, `pipeline/cache_ia.py`) | El jurado re-corre sin nuestra clave. Con la caché, la entrega con IA se reproduce idéntica, sin clave ni internet. | Tests sin llamar al modelo: acierto exacto, respaldo sin clave, respaldo "parecido" con bandos invertidos |
+| Ejemplos para la IA = las 12 raíces **más centrales** de cada bando (antes, 12 al azar) | Estables entre máquinas (GPU vs CPU cambian decimales). Si igual cambia alguno, la caché reconoce cada bando por ejemplos en común | Sin IA el resultado es idéntico (la elección de ejemplos solo afecta al pedido a la IA) |
+
+## Por qué no se agregó una cascada NLI + LLM para la postura
+
+El diagnóstico muestra que la postura **por comentario** ya es casi perfecta: dentro de cada
+narrativa, los dos bandos (armados con las respuestas que se contradicen) aciertan el 98,7% al
+100%. Lo único que falla es **un bit por narrativa**: cuál de los dos bandos afirma. Ese bit
+ya lo decide una sola llamada a la IA por narrativa (~12 por corrida). Un clasificador NLI
+comentario por comentario agregaría costo y tiempo para resolver algo que ya está resuelto.
+Sin clave, ninguna señal general (negación, dirección de respuestas, raíces) le gana a la regla
+actual. Y es frágil: los dos bandos tienen casi el mismo tamaño, así que un cambio mínimo en los
+grupos (como el de UMAP con menos iteraciones) invierte otra narrativa. Es el riesgo principal
+que queda para el set final (ver "Límites conocidos" en el README).
+
+## Costo y tiempo
+
+| Medida | Antes | Después |
+|---|---|---|
+| Segundos por cada 1.000 comentarios (set final, cache vacía, GPU de la Mac) | 0,74 s | 0,74 s (sin cambios de cómputo aceptados) |
+| USD de IA por cada 1.000 comentarios | 0 (sin clave) | 0 (sin clave). Con clave: ~12 llamadas a Haiku 5.5 ≈ US$ 0,002 por corrida (≈ US$ 0,000013 por cada 1.000); con la caché, US$ 0 en cada re-corrida |
+| Cuello de botella medido | UMAP + HDBSCAN: 61 s de 111 (55%); embeddings 29 s; cargar el modelo 6 s | Igual. UMAP corre en un solo hilo porque fijar la semilla lo exige: paralelizarlo rompería la reproducibilidad |

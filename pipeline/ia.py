@@ -7,14 +7,23 @@ Por qué usamos IA acá y no en todo:
   la afirmación y cuál la niega? Ninguna regla simple acertó siempre.
 
 La clave (ANTHROPIC_API_KEY) se lee del entorno o del archivo .env, que NUNCA
-se sube al repositorio. Si no hay clave o la llamada falla, el pipeline sigue
-igual con un respaldo: "el bando más grande es el que apoya".
+se sube al repositorio.
+
+Reproducibilidad: cada respuesta se guarda en una caché versionada (modelos/cache_ia.json,
+ver cache_ia.py). Con la caché, el pipeline reproduce la entrega SIN clave. Si falta una
+respuesta y no hay clave (o la llamada falla), esa narrativa usa el respaldo sin IA:
+"el bando más grande es el que apoya".
+
+Haiku 5.5 no acepta temperature (la API devuelve error con valores no estándar): la
+caché es lo que hace la salida idéntica entre corridas.
 """
 import json
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+from pipeline import cache_ia
 
 MODELO = "claude-haiku-5-5"
 PRECIO_ENTRADA = 0.10 / 1_000_000   # US$ por token de entrada (Haiku 5.5)
@@ -31,6 +40,10 @@ ESQUEMA = {
     "required": ["afirmacion", "bando_que_afirma", "titulo", "frases_clave"],
     "additionalProperties": False,
 }
+
+# Parámetros del pedido (entran en la huella de la caché: si cambian, se vuelve a preguntar)
+MAX_TOKENS = 1024
+PARAMETROS = {"max_tokens": MAX_TOKENS, "thinking": "disabled", "effort": "low", "esquema": ESQUEMA}
 
 INSTRUCCIONES = """Analizás comentarios de redes sociales en español rioplatense.
 Te paso comentarios de UNA misma discusión, separados en dos bandos opuestos (A y B).
@@ -58,65 +71,120 @@ def _cargar_clave():
     return False
 
 
-def _preguntar(cliente, etiqueta, info, crono):
-    """Una llamada a Haiku para una narrativa. Devuelve el JSON de respuesta o None."""
+def _mensaje(info):
+    """Arma el mensaje con los ejemplos de los dos bandos (siempre igual para los mismos datos)."""
     bloques = []
     for nombre, ejemplos in zip("AB", info["ejemplos"]):
         lista = "\n".join(f"- {t}" for t in ejemplos)
         bloques.append(f"BANDO {nombre}:\n{lista}")
+    return "\n\n".join(bloques)
+
+
+def _preguntar(cliente, etiqueta, mensaje):
+    """Una llamada a Haiku. Devuelve la entrada para la caché, o None si no hubo respuesta usable."""
     try:
         respuesta = cliente.messages.create(
             model=MODELO,
-            max_tokens=1024,
+            max_tokens=MAX_TOKENS,
             system=INSTRUCCIONES,
-            # Tarea simple: pensar poco (más barato y rápido)
+            # Tarea simple: sin razonamiento extendido y con poco esfuerzo (más barato y rápido)
             thinking={"type": "disabled"},
             output_config={"effort": "low",
                            "format": {"type": "json_schema", "schema": ESQUEMA}},
-            messages=[{"role": "user", "content": "\n\n".join(bloques)}],
+            messages=[{"role": "user", "content": mensaje}],
         )
     except Exception as error:   # red, clave inválida, límite de uso...: seguimos con el respaldo
         logging.warning("IA: falló la narrativa %s (%s)", etiqueta, type(error).__name__)
         return None
     uso = respuesta.usage
-    crono.sumar_ia(uso.input_tokens + uso.output_tokens,
-                   uso.input_tokens * PRECIO_ENTRADA + uso.output_tokens * PRECIO_SALIDA)
     if respuesta.stop_reason == "refusal":
         logging.warning("IA: Haiku no quiso responder sobre %s; uso el respaldo", etiqueta)
         return None
     texto = next((b.text for b in respuesta.content if b.type == "text"), "")
     try:
-        return json.loads(texto)
+        datos = json.loads(texto)
     except json.JSONDecodeError:
         return None
+    return {"respuesta": datos, "tokens_entrada": uso.input_tokens, "tokens_salida": uso.output_tokens,
+            "usd": round(uso.input_tokens * PRECIO_ENTRADA + uso.output_tokens * PRECIO_SALIDA, 8)}
 
 
-def decidir(resumen, crono):
+MIN_COINCIDENCIAS = 4   # respaldo difuso: ejemplos en común (de 12) para reconocer un bando
+
+
+def _buscar_parecida(cache, huella_datos, etiqueta, ejemplos):
+    """Si no hay coincidencia exacta: busca una respuesta guardada del MISMO set de datos y la
+    misma narrativa, y reconoce cada bando por sus ejemplos en común (los ejemplos son los más
+    centrales, así que casi no cambian entre máquinas). Devuelve (entrada, invertida) o (None, False).
+    """
+    mejor, invertida, mejor_puntaje = None, False, 0
+    for entrada in cache.datos.values():
+        if entrada.get("huella_datos") != huella_datos or entrada.get("etiqueta") != etiqueta:
+            continue
+        a, b = (set(x) for x in entrada.get("ejemplos", [[], []]))
+        directo = len(a & set(ejemplos[0])) + len(b & set(ejemplos[1]))
+        cruzado = len(a & set(ejemplos[1])) + len(b & set(ejemplos[0]))
+        if max(directo, cruzado) >= 2 * MIN_COINCIDENCIAS and max(directo, cruzado) > mejor_puntaje \
+                and directo != cruzado:
+            mejor, invertida, mejor_puntaje = entrada, cruzado > directo, max(directo, cruzado)
+    return mejor, invertida
+
+
+def decidir(resumen, crono, ruta_cache=None, huella_datos=""):
     """Para cada narrativa, devuelve (apoya_es, titulos).
 
     apoya_es: {narrativa: 0 o 1}  qué bando es el que apoya
-    titulos:  {narrativa: {"titulo": ..., "frases_clave": [...]}}  (solo si respondió la IA)
+    titulos:  {narrativa: {"titulo": ..., "frases_clave": [...]}}  (solo si hubo respuesta de la IA)
+
+    Orden: 1) caché versionada, 2) modelo (si hay clave), 3) respaldo sin IA.
+    El costo que se suma a costo.json es el de la corrida que generó cada respuesta.
     """
     # Respaldo: el bando más grande es el que apoya
     apoya_es = {k: (0 if v["tamano"][0] >= v["tamano"][1] else 1) for k, v in resumen.items()}
     titulos = {}
-    if not _cargar_clave():
-        logging.warning("IA: no hay ANTHROPIC_API_KEY (ni en el entorno ni en .env); uso el respaldo")
-        return apoya_es, titulos
+    cache = cache_ia.CacheIA(ruta_cache) if ruta_cache else cache_ia.CacheIA()
+    mensajes = {k: _mensaje(v) for k, v in resumen.items()}
+    claves = {k: cache_ia.huella(MODELO, PARAMETROS, INSTRUCCIONES, m) for k, m in mensajes.items()}
+    entradas = {k: cache.buscar(c) for k, c in claves.items()}
+    invertidas = set()
+    for k in sorted(k for k, e in entradas.items() if e is None):
+        parecida, invertida = _buscar_parecida(cache, huella_datos, k, resumen[k]["ejemplos"])
+        if parecida:
+            entradas[k] = parecida
+            if invertida:
+                invertidas.add(k)
+            logging.info("IA: %s resuelta con una respuesta guardada parecida (ejemplos en común)", k)
+    faltan = sorted(k for k, e in entradas.items() if e is None)
 
-    import anthropic
-    cliente = anthropic.Anthropic(max_retries=3, timeout=60)
-    # Hasta 8 narrativas en paralelo para no esperar una por una
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futuros = {k: pool.submit(_preguntar, cliente, k, v, crono) for k, v in resumen.items()}
-    respondidas = 0
-    for k, futuro in futuros.items():
-        r = futuro.result()
-        if not r:
+    if faltan and _cargar_clave():
+        import anthropic
+        cliente = anthropic.Anthropic(max_retries=3, timeout=60)
+        # Hasta 8 narrativas en paralelo para no esperar una por una
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futuros = {k: pool.submit(_preguntar, cliente, k, mensajes[k]) for k in faltan}
+        for k, futuro in futuros.items():
+            entrada = futuro.result()
+            if entrada:
+                entrada.update({"etiqueta": k, "huella_datos": huella_datos, "ejemplos": resumen[k]["ejemplos"]})
+                cache.guardar(claves[k], entrada)
+                entradas[k] = entrada
+        cache.escribir()
+    elif faltan:
+        logging.warning("IA: %s narrativas sin respuesta en la caché y sin ANTHROPIC_API_KEY: "
+                        "uso el respaldo (el bando más grande apoya)", len(faltan))
+
+    for k in sorted(entradas):
+        e = entradas[k]
+        if not e:
             continue
-        respondidas += 1
+        crono.sumar_ia(e["tokens_entrada"] + e["tokens_salida"], e["usd"])
+        r = e["respuesta"]
         apoya_es[k] = 0 if r["bando_que_afirma"] == "A" else 1
+        if k in invertidas:      # la respuesta guardada tenía los bandos al revés
+            apoya_es[k] = 1 - apoya_es[k]
         titulos[k] = {"titulo": r["titulo"].strip(), "frases_clave": [f.strip() for f in r["frases_clave"]]}
-    logging.info("IA: %s de %s narrativas resueltas con %s (US$ %.4f)",
-                 respondidas, len(resumen), MODELO, crono.usd_ia)
+    crono.ia_desde_cache = cache.aciertos
+    crono.ia_nuevas = cache.nuevas
+    logging.info("IA: %s de %s narrativas resueltas con %s (%s de la caché, %s nuevas; US$ %.4f)",
+                 len(titulos), len(resumen), MODELO, cache.aciertos, cache.nuevas, crono.usd_ia)
     return apoya_es, titulos

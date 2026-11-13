@@ -9,6 +9,7 @@ en el log y se sigue con las demás. Al final SIEMPRE se escribe una entrega/
 válida, aunque sea con resultados parciales.
 """
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -71,7 +72,10 @@ def etapa_postura(estado, args):
         resumen_ia = ({k: (0 if v["tamano"][0] >= v["tamano"][1] else 1) for k, v in resumen.items()}, {})
         logging.info("IA: desactivada con --sin-ia; uso el bando más grande")
     else:
-        resumen_ia = ia.decidir(resumen, estado["crono"])
+        # Huella del set de datos: la caché de IA solo reutiliza respuestas del MISMO set
+        ids = "\n".join(sorted(estado["comentario_ids"]))
+        huella_datos = hashlib.sha256(ids.encode("utf-8")).hexdigest()[:16]
+        resumen_ia = ia.decidir(resumen, estado["crono"], huella_datos=huella_datos)
     apoya_es, titulos = resumen_ia
     estado["postura"] = postura.posturas(com, bando_com, apoya_es, extra)
     # Títulos sin IA: el comentario más típico del bando que apoya (mejor que palabras sueltas)
@@ -165,8 +169,13 @@ def main():
         narrativa=estado.get("narrativa"), postura=estado.get("postura"),
         grupo=estado.get("grupo"), narrativas=estado.get("narrativas"))
 
-    uso_ia = (f"IA ({ia.MODELO}) solo 1 llamada por narrativa para decidir qué bando apoya y titularla"
-              if crono.tokens_ia else "IA: no se usó (sin clave); qué bando apoya lo decide el bando más grande")
+    if crono.tokens_ia:
+        uso_ia = f"IA ({ia.MODELO}) 1 llamada por narrativa para decidir qué bando apoya y titularla"
+        if getattr(crono, "ia_desde_cache", 0):
+            uso_ia += (f" ({crono.ia_desde_cache} respuestas leídas de la caché versionada modelos/cache_ia.json;"
+                       f" tokens y USD = los de la corrida que las generó)")
+    else:
+        uso_ia = "IA: no se usó (sin clave ni caché); qué bando apoya lo decide el bando más grande"
     notas = (f"embeddings locales ({embeddings.MODELO}); narrativas: micro-grupos (UMAP+HDBSCAN) + votos de "
              f"hilos + Leiden; ruido: clasificador entrenado en práctica; {uso_ia}; coordinación: copias + "
              f"llegadas juntas + respuestas + comunidades densas (Leiden) + hashtag propio, sin IA")

@@ -34,10 +34,18 @@ Otros comandos:
 | `make test` | Corre los tests |
 | `make limpiar` | Borra la cache (embeddings, UMAP, base). La próxima corrida recalcula todo |
 
-**IA opcional.** Si existe la variable `ANTHROPIC_API_KEY` (en el entorno o en un archivo `.env`,
-ver `.env.example`), se hace 1 llamada a Claude Haiku por narrativa (~12 en total) para decidir qué
-bando "apoya" y ponerle un título legible. Sin clave, el pipeline usa un respaldo sin IA y anda igual.
-La entrega de este repo se generó **sin IA** (`usd_ia: 0`).
+**IA opcional y reproducible.** Para cada narrativa, la IA decide cuál de los dos bandos "apoya" y
+le pone un título: 1 llamada a Claude Haiku 5.5 por narrativa (~12 en total, menos de 1 centavo). El
+orden es:
+
+1. **Caché versionada** (`modelos/cache_ia.json`, va en el repo): si el pedido ya se hizo, se usa esa
+   respuesta. Así el comando reproduce la entrega **sin clave y sin internet**.
+2. **El modelo**, si hay `ANTHROPIC_API_KEY` (en el entorno o en `.env`, ver `.env.example`). La
+   respuesta se agrega a la caché.
+3. **Respaldo sin IA** ("el bando más grande apoya"), si no hay ni caché ni clave. Se avisa en el log.
+
+`costo.json` informa el gasto de la corrida que generó cada respuesta guardada. La entrega actual se
+generó **sin IA** (`usd_ia: 0`): en esta etapa no se usó ninguna clave, así que la caché está vacía.
 
 ## Resultados
 
@@ -151,7 +159,10 @@ leidenalg y el SDK de Anthropic (opcional).
 
 ## Límites conocidos
 
-- Sin IA, la regla "el bando más grande apoya" se equivoca en 1 de las 13 narrativas de práctica.
+- **Riesgo principal: la postura sin IA.** Dentro de cada narrativa los dos bandos tienen casi el mismo
+  tamaño (por ejemplo 5.745 contra 5.924), así que "el bando más grande apoya" es casi una moneda al
+  aire: en práctica falla 1 de 13 narrativas. Ninguna señal general sin IA lo mejora (ver
+  [`reportes/mejoras.md`](reportes/mejoras.md)). Con IA se resuelve con 1 llamada por narrativa.
 - El clasificador de ruido aprendió de la práctica. Usa rasgos independientes del tema y se validó
   dejando cada tema afuera (F1 0,94 a 0,99), pero un ruido de forma muy distinta podría colarse.
 - La coordinación detecta el 89% de las cuentas de campaña en práctica con 98% de precisión. Las
@@ -167,6 +178,7 @@ entrenar_ruido.py      cómo se entrenó ese clasificador
 evaluacion/            script oficial del jurado + registro de pruebas
 experimentos/runs.csv  historial de puntajes
 docs/                  entendimiento, decisiones, generalización y escala
+reportes/              diagnóstico de puntos perdidos y registro de mejoras (aceptadas y descartadas)
 reportes/dashboard.html  dashboard generado por el pipeline sobre el set final
 tests/                 tests (make test)
 entrega/               resultado sobre el set final (lo que se puntúa)
