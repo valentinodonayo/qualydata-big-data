@@ -12,8 +12,7 @@ Entonces, dentro de cada narrativa:
 2. Cada raíz toma el bando de su micro-grupo.
 3. Cada respuesta toma su postura del padre: corta = igual, larga = la opuesta.
 4. Falta saber cuál de los dos bandos es "apoya". Eso lo decide la IA (ia.py)
-   mirando ejemplos de cada bando; si no hay IA, se elige el bando más grande, salvo que estén
-   parejos: ahí desempata una señal local (senal_local: qué bando "refuta").
+   mirando ejemplos de cada bando; si no hay IA, se elige el bando más grande.
 """
 import logging
 import os
@@ -182,94 +181,6 @@ def calcular_bandos(com, emb, emb_indice, extra):
         resumen[etiqueta] = {"tamano": tamano, "ejemplos": ejemplos, "variados": variados}
     logging.info("Postura: bandos armados en %s narrativas", len(resumen))
     return bando_com, resumen
-
-
-# --- Señal LOCAL de polaridad (sin IA): ¿qué bando "refuta"? -------------------------------------
-# Problema: sin respuestas de IA solo queda "el bando más grande apoya", que es una moneda al aire
-# cuando los bandos están ~50/50. Idea: el bando que RECHAZA una narrativa habla distinto, sea cual
-# sea el tema: desmiente ("es mentira", "no hubo", "ya lo desmintieron"), relativiza ("no es para
-# tanto") o reta al otro ("dejen de inventar", "muestren pruebas", "hay que informarse").
-# Se mide de dos formas independientes y solo se vota si alguna supera su umbral y no se contradicen:
-#   1. LÉXICO: fracción de textos distintos del bando con alguna expresión de refutación.
-#   2. PROTOTIPOS: con el mismo modelo de embeddings del pipeline, cuánto se parece el bando a
-#      frases genéricas de desmentida más que a frases genéricas de denuncia/reclamo.
-# Medido (evaluacion/medir_polaridad_local.py): práctica 12 aciertos, 0 errores, 1 abstención;
-# set final (otros temas, comparado con la entrega) 10 aciertos, 0 errores, 2 abstenciones.
-# Limitación conocida: en narrativas "positivas" (promesas: "el litio trae trabajo") el que rechaza
-# es el que se queja, y la señal se achica o se da vuelta: por eso se abstiene y nunca decide sola.
-_REFUTACION = _re.compile(
-    r"\b(mentira|fals[oa]|truch[oa]|verso|humo|invent\w*|exager\w*|desmint\w*|difam\w*|no es cierto|no es asi|"
-    r"no es (para|pa) tanto|nada (que|q) ver|dejen de|pruebas|informarse|informense|lean bien|sin saber|"
-    r"no hubo|no hay ningun\w*|nadie va a|siempre los mismos|critic\w*|culpan|se quejan|quejarse|obvio)\b")
-FRASES_REFUTAN = [
-    "eso es mentira", "no es así, están exagerando", "muestren pruebas o dejen de difamar", "dejen de inventar",
-    "eso ya se desmintió", "no es para tanto", "la cosa no es como la cuentan", "eso lo dicen los que no saben",
-    "es falso, no pasó nada de eso", "hay que informarse antes de hablar", "siempre los mismos criticando todo",
-    "no tienen razón, ya está solucionado"]
-FRASES_AFIRMAN = [
-    "es una vergüenza", "nadie hace nada", "me dijeron que va a pasar", "hay que hacer algo ya", "nos están robando",
-    "lo están ocultando", "esto es un desastre", "no se puede vivir así", "nos mienten en la cara",
-    "es lo mejor que nos pasó", "hace falta que lo hagan", "cada vez estamos peor"]
-UMBRAL_LEXICO = 0.10       # diferencia mínima entre bandos en la fracción de textos con refutación
-UMBRAL_PROTOTIPOS = 0.01   # diferencia mínima entre bandos en parecido a los prototipos
-
-
-def fraccion_refutacion(textos):
-    """Fracción de textos DISTINTOS (sin contar copias) que tienen alguna expresión de refutación."""
-    from pipeline import texto as tx
-    distintos = {tx.para_comparar(t) for t in textos}
-    if not distintos:
-        return 0.0
-    return sum(bool(_REFUTACION.search(t)) for t in distintos) / len(distintos)
-
-
-def direccion_refutacion(carpeta_cache):
-    """Vector (largo 1) que apunta "hacia la refutación": centro de las frases que desmienten menos
-    centro de las frases que denuncian. Usa el mismo modelo local (y la misma caché) que el pipeline."""
-    from pipeline import embeddings
-    matriz, indice = embeddings.calcular(FRASES_REFUTAN + FRASES_AFIRMAN, carpeta_cache)
-    V = matriz[indice]
-    w = V[:len(FRASES_REFUTAN)].mean(0) - V[len(FRASES_REFUTAN):].mean(0)
-    return w / np.linalg.norm(w)
-
-
-def voto_local(dif_lexico, dif_prototipos):
-    """Junta las dos medidas. Las dos vienen como "cuánto MÁS refutador es el bando 0 que el 1".
-
-    Devuelve qué bando APOYA (0 o 1), o None si se abstiene: ninguna medida supera su umbral,
-    o las dos lo superan pero apuntan a bandos distintos.
-    """
-    votos = set()
-    if abs(dif_lexico) >= UMBRAL_LEXICO:
-        votos.add(1 if dif_lexico > 0 else 0)        # el bando 0 refuta más -> apoya el 1
-    if abs(dif_prototipos) >= UMBRAL_PROTOTIPOS:
-        votos.add(1 if dif_prototipos > 0 else 0)
-    return votos.pop() if len(votos) == 1 else None
-
-
-def senal_local(com, emb, emb_indice, extra, bando_com, direccion):
-    """Para cada narrativa: {"voto": bando que apoya (0/1) o None, "lexico": dif, "prototipos": dif}.
-
-    Mira solo las RAÍCES de cada bando (las respuestas heredan la postura por el hilo) y solo textos
-    distintos, para que una frase copiada mil veces no pese mil veces.
-    direccion: lo que devuelve direccion_refutacion().
-    """
-    narr = extra["narr_num"]
-    textos = com["texto"].tolist()
-    resultado = {}
-    for etiqueta in sorted(set(narr) - {""}):
-        pos = [np.where((narr == etiqueta) & (bando_com == b))[0] for b in (0, 1)]
-        if not len(pos[0]) or not len(pos[1]):
-            resultado[etiqueta] = {"voto": None, "lexico": 0.0, "prototipos": 0.0}
-            continue
-        lexico = [fraccion_refutacion(textos[i] for i in p) for p in pos]
-        # Centro de significado de cada bando (sobre textos distintos) proyectado en la dirección
-        centro = [emb[np.unique(emb_indice[p])].mean(0) for p in pos]
-        dif_lexico = float(lexico[0] - lexico[1])
-        dif_prototipos = float((centro[0] - centro[1]) @ direccion)
-        resultado[etiqueta] = {"voto": voto_local(dif_lexico, dif_prototipos),
-                               "lexico": round(dif_lexico, 3), "prototipos": round(dif_prototipos, 4)}
-    return resultado
 
 
 def posturas(com, bando_com, apoya_es, extra):

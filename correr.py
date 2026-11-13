@@ -68,23 +68,9 @@ def etapa_postura(estado, args):
     com = estado["datos"]["comentarios"]
     extra = estado["extra_narrativas"]
     bando_com, resumen = postura.calcular_bandos(com, estado["emb"], estado["emb_indice"], extra)
-    # Señal local sin IA: qué bando "refuta" (léxico + prototipos con el modelo de embeddings local).
-    # Solo desempata cuando no hay votos de IA unánimes (ver ia._combinar). Si falla, se sigue sin ella.
-    try:
-        direccion = postura.direccion_refutacion(args.cache)
-        for k, v in postura.senal_local(com, estado["emb"], estado["emb_indice"], extra, bando_com, direccion).items():
-            resumen[k]["local"] = v["voto"]
-            logging.info("Postura: señal local en %s -> %s (léxico %+.3f, prototipos %+.4f)", k,
-                         "se abstiene" if v["voto"] is None else "apoya el bando " + "AB"[v["voto"]],
-                         v["lexico"], v["prototipos"])
-    except Exception as error:      # p. ej. sin el modelo de embeddings a mano: no es grave
-        logging.warning("Postura: no pude calcular la señal local (%s); sigo sin ella", error)
     if args.sin_ia:
-        # Sin IA: bando más grande, salvo bandos parejos (< 54%) donde desempata la señal local
-        decision = {k: ia._combinar([], v["tamano"], None, v.get("local")) for k, v in resumen.items()}
-        resumen_ia = ({k: d[0] for k, d in decision.items()}, {})
-        for k, d in sorted(decision.items()):
-            logging.info("IA: desactivada con --sin-ia; %s -> apoya el bando %s (%s)", k, "AB"[d[0]], d[1])
+        resumen_ia = ({k: (0 if v["tamano"][0] >= v["tamano"][1] else 1) for k, v in resumen.items()}, {})
+        logging.info("IA: desactivada con --sin-ia; uso el bando más grande")
     else:
         # Huella del set de datos: la caché de IA solo reutiliza respuestas del MISMO set
         ids = "\n".join(sorted(estado["comentario_ids"]))
