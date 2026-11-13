@@ -309,7 +309,9 @@ Google Gemini (sin SDK) y el SDK de Anthropic.
   macro-F1 0,872 sin IA contra 0,998 con IA en práctica).
 - **Coordinación: quedan 2 cuentas sin marcar en práctica (ninguna genuina marcada).** Las 2 son de la
   campaña "de cobertura" (cuentas viejas, textos variados) y coinciden con la operación tan poco como
-  una cuenta genuina; no encontramos una señal que las recupere sin marcar genuinas.
+  una cuenta genuina. Se probaron 7 enfoques (incluidos NCD por compresión y ráfagas compartidas, de
+  la literatura 2025): ninguno las recupera sin marcar genuinas
+  ([`reportes/mejoras-13-11.md`](reportes/mejoras-13-11.md)).
 - **La coordinación depende de la dinámica del set.** Los umbrales son absolutos (por ejemplo, 3
   publicaciones en común). Con la mitad de las publicaciones la cobertura baja a 0,58 y con el 10% no
   se marca a nadie. Y en el set inventado (variante con respuestas que acuerdan), donde las campañas comentan en los mismos momentos que la
