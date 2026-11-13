@@ -9,6 +9,7 @@ clave de API. Diagnóstico de partida: [`diagnostico.md`](diagnostico.md).
 
 | Cambio | Práctica antes → después | Hold-out | Decisión |
 |---|---|---|---|
+| Coordinación, capa G "llegadas raras": sumar a una operación la cuenta que llega a sus publicaciones en momentos tranquilos (cada coincidencia en 15 min pesa 1/(presentes−1); puntaje ≥ 1,4, densidad ≥ 0,03 por publicación, ≥ 3 publicaciones en común) | 51,98 → **52,99** (cuentas F1 0,932 → 0,965, precisión 0,981 → 0,982; grupos 0,891 → 0,948). Estable: rareza 1,2–1,4 y densidad 0,02–0,05 dan lo mismo; con 1,6, 52,56 | Mejora o empata en los 8: tema afuera hospital +0,47, litio +0,56, colectivo igual, primeros 10 días +0,46, semillas +0,86/+0,87/+0,86, datos sucios +1,01. Precisión nunca baja | **Aceptado**. +0,4 s por corrida. Set final: +3 cuentas en op02 |
 | Coordinación: el par de cuentas tiene que coincidir en ≥30% de la actividad de **las dos** cuentas (antes, de la menos activa) | 51,98 → **52,06** (precisión de cuentas 0,981 → 0,990; recall igual) | Mejora semillas (+0,07) y datos sucios (+0,08), pero **empeora** tema afuera litio (52,52 → 51,97: pierde 3 cuentas reales de campaña) y primeros 10 días (51,91 → 51,76) | **Revertido** (regla madre). Resultados en `experimentos/generalizacion_pares_descartado.csv` |
 | Postura sin IA: "apoya" = bando con menos negaciones | Acierta 8 de 13 narrativas (hoy: 12 de 13) | — | **Descartado** sin implementar |
 | Postura sin IA: "apoya" = bando al que más le responden | 9 de 13 | — | **Descartado** |

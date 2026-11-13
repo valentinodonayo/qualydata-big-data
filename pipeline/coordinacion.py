@@ -17,6 +17,13 @@ que se comporta junto más de lo que el azar explicaría. Buscamos 4 tipos de se
      operación) o que intercambia >= 3 respuestas con >= 2 miembros distintos. Rescata
      cuentas de poca actividad que no llegaron a 3 coincidencias con un mismo par.
 
+  G) Llegadas raras (después de E): se suma a una operación la cuenta que llega a las mismas
+     publicaciones que sus miembros en momentos TRANQUILOS. Cada coincidencia en una franja de
+     15 min pesa 1/(cuentas presentes - 1): coincidir con pocas pesa mucho, en un momento viral
+     casi nada. Se suma si el puntaje hacia la operación es >= 1,4, si ese puntaje es >= 0,03 por
+     publicación en la que comenta (densidad: una cuenta muy activa junta puntaje por volumen, no
+     por coordinación) y si coincidió (en franjas de 60 min) en >= 3 publicaciones distintas. Rescata cuentas de "cobertura" con textos variados.
+
   D) Red de respuestas "con ciclos": en una charla normal las respuestas forman un
      árbol (cada uno contesta a uno). Un grupo coordinado se responde entre todos y
      forma una red llena de ciclos. Con Leiden buscamos comunidades en el grafo de
@@ -52,6 +59,9 @@ HASHTAG_MIN_USOS = 10          # capa E: un hashtag cuenta si se usó al menos 1
 HASHTAG_FRACCION_OP = 2 / 3    # ...y una mayoría clara (2 de cada 3 usos) es de UNA operación
 MIN_RESPUESTAS_ADHESION = 3    # capa E: respuestas intercambiadas con miembros de la operación
 MIN_MIEMBROS_ADHESION = 2      # ...con al menos 2 miembros distintos
+RAREZA_MINIMA = 1.4           # capa G: suma de pesos 1/(presentes-1) hacia la operación
+DENSIDAD_RAREZA = 0.03         # capa G: ...y ese puntaje dividido las publicaciones de la cuenta
+FRANJA_LARGA_S = 60 * 60       # capa G: franja para contar publicaciones distintas en común
 SEMILLA = int(os.environ.get("QUALY_SEMILLA", "42"))   # fija; se cambia solo para medir estabilidad
 
 CUENTA_DESCONOCIDA = "desconocida"   # la pone datos.py cuando falta la cuenta: no se mezcla
@@ -220,6 +230,48 @@ def _adhesion(com, grupo):
     return nuevas
 
 
+def _llegadas_raras(com, grupo):
+    """Capa G: puntaje de coincidencias en momentos tranquilos con miembros de cada operación.
+    Devuelve {cuenta: operación} para las cuentas no miembro que superan los umbrales."""
+    con_fecha = com[com["ts"].notna()]
+    ts = con_fecha["ts"].astype("int64")
+    puntaje = defaultdict(lambda: defaultdict(float))    # cuenta -> operación -> puntaje
+    publicaciones = defaultdict(lambda: defaultdict(set))  # cuenta -> operación -> {publicaciones}
+    for ancho in (FRANJA_S, FRANJA_LARGA_S):
+        for corrimiento in (0, ancho // 2):              # dos grillas corridas, como en la capa B
+            clave = con_fecha["publicacion_id"] + "@" + ((ts + corrimiento) // ancho).astype(str)
+            for k, cuentas in con_fecha.groupby(clave)["cuenta_id"]:
+                presentes = set(cuentas)
+                miembros = defaultdict(int)
+                for c in presentes:
+                    if c in grupo:
+                        miembros[grupo[c]] += 1
+                if len(presentes) < 2 or not miembros:
+                    continue
+                peso = 1.0 / (len(presentes) - 1)
+                publicacion = k.split("@")[0]
+                for c in presentes:
+                    if c in grupo:
+                        continue
+                    for op, n in miembros.items():
+                        if ancho == FRANJA_S:
+                            puntaje[c][op] += peso * n / 2   # /2: cada momento se cuenta en dos grillas
+                        else:
+                            publicaciones[c][op].add(publicacion)
+    actividad = com.groupby("cuenta_id")["publicacion_id"].nunique().to_dict()
+    nuevas = {}
+    for c in sorted(puntaje):
+        candidatas = [(p, op) for op, p in puntaje[c].items()
+                      if p >= RAREZA_MINIMA and p / max(1, actividad.get(c, 1)) >= DENSIDAD_RAREZA
+                      and len(publicaciones[c][op]) >= MIN_PUBLICACIONES]
+        if candidatas:
+            nuevas[c] = max(candidatas, key=lambda x: (x[0], -x[1]))[1]
+    nuevas.pop(CUENTA_DESCONOCIDA, None)
+    if nuevas:
+        logging.info("Coordinación (capa G): %s cuentas se suman por llegar en momentos tranquilos", len(nuevas))
+    return nuevas
+
+
 def detectar(com: pd.DataFrame):
     """Devuelve (grupo, resumen).
 
@@ -247,6 +299,12 @@ def detectar(com: pd.DataFrame):
     for c, i in _adhesion(com, provisorio).items():
         operaciones[i][0].add(c)
         operaciones[i][1].add("adhesión")
+
+    # Capa G: llegadas raras (se calcula con las operaciones ya completadas por E)
+    provisorio = {c: i for i, (cuentas, _) in enumerate(operaciones) for c in sorted(cuentas)}
+    for c, i in _llegadas_raras(com, provisorio).items():
+        operaciones[i][0].add(c)
+        operaciones[i][1].add("llegadas raras")
 
     # Etiquetas op01, op02... de la operación más grande a la más chica
     operaciones.sort(key=lambda x: -len(x[0]))
