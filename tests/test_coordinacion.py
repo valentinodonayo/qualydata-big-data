@@ -107,3 +107,23 @@ def test_llegadas_raras_segunda_pasada():
     assert primera == {"b": 0}
     segunda = coordinacion._llegadas_raras(com, {**grupo, **primera})
     assert segunda == {"c": 0}
+
+
+# ---------------- Capa H: tanda de creación ----------------
+
+def test_tanda_de_creacion():
+    """Operación de 6 cuentas creadas en 3 días con usuarios 'palabra+4 dígitos'.
+    Se suma: 'nueva1' (misma ventana y forma). No se suman: 'vieja' (creada años antes),
+    'otraforma' (misma ventana, otra forma de usuario) ni 'sinfecha' (metadata rota)."""
+    miembros = [f"m{i}" for i in range(6)]
+    cuentas = pd.DataFrame(
+        [(c, f"palabra{1000 + i}", f"2026-08-2{6 + i % 3}") for i, c in enumerate(miembros)]
+        + [("nueva1", "otrapalabra4321", "2026-08-27"), ("vieja", "pepito1234", "2016-03-01"),
+           ("otraforma", "juan_perez", "2026-08-27"), ("sinfecha", "algo9999", "fecha rota")],
+        columns=["cuenta_id", "usuario", "fecha_creacion"])
+    com = pd.DataFrame([_fila(1, "p1", "m0", BASE, "hola")])
+    grupo = {c: 0 for c in miembros}
+    assert coordinacion._tanda_de_creacion(com, cuentas, grupo) == {"nueva1": 0}
+    # Sin tanda (fechas desparramadas): no suma a nadie
+    cuentas.loc[cuentas.cuenta_id.isin(miembros), "fecha_creacion"] = [f"20{10 + i}-01-01" for i in range(6)]
+    assert coordinacion._tanda_de_creacion(com, cuentas, grupo) == {}
