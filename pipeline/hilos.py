@@ -8,11 +8,32 @@ Lo que medimos en los datos de práctica (y coincide con las reglas del desafío
 
 Entonces: si sabemos la narrativa y la postura de la "raíz" de un hilo,
 podemos deducir las de todas sus respuestas, gratis y sin IA.
+
+Dos excepciones medidas sobre la verdad de práctica (ver experimentos):
+- Un 1% de las respuestas cortas CONTRADICE al padre: son frases con contenido
+  propio ("los turnos tardan meses") que también circulan como raíces. Si el
+  mismo texto aparece como raíz con una postura clara, esa es la postura.
+- Un 0,2% de las respuestas largas ACUERDA con el padre: casi todas empiezan con
+  una fórmula de acuerdo ("Eso, ...", "Tal cual, ..."). Si la respuesta abre con
+  una de esas fórmulas (y no la niega), acompaña al padre aunque sea larga.
 """
+import re
+from collections import Counter, defaultdict
+
 from pipeline import texto as tx
 
 PALABRAS_RESPUESTA_CORTA = 4
 OPUESTA = {"apoya": "rechaza", "rechaza": "apoya"}
+
+# Fórmulas de acuerdo al inicio de la respuesta (texto ya normalizado). El lookahead
+# descarta que la fórmula venga negada ("eso no", "claro que no", "obvio que no").
+_ACUERDO = re.compile(
+    r"^(tal cual(?:ito)?|eso|eso mismo|exacto|exactamente|asi es(?: nomas)?|idem|"
+    r"de acuerdo|totalmente(?: de acuerdo)?|muy cierto|obvio|claro(?: que si)?|"
+    r"por supuesto|mas claro)\b(?!\s*(que\s+)?no\b)")
+MIN_USOS_TEXTO_RAIZ = 2        # el texto tiene que aparecer como raíz al menos 2 veces
+FRACCION_TEXTO_RAIZ = 0.7      # ...y con una mayoría clara de una sola postura
+MIN_PALABRAS_TEXTO_RAIZ = 3    # textos de 1-2 palabras ("jaja", "+1") no llevan postura propia
 
 
 def es_corta(texto: str) -> bool:
@@ -55,11 +76,33 @@ def posturas_por_hilo(ids, padres, textos, postura_raiz):
     """Completa la postura de cada respuesta a partir de la de su padre.
 
     postura_raiz: dict {comentario_id: "apoya"/"rechaza"} con la postura de las raíces.
-    Recorre de arriba hacia abajo: corta -> igual que el padre; larga -> la opuesta.
+    Recorre de arriba hacia abajo. Orden de decisiones para cada respuesta:
+    1. Si abre con una fórmula de acuerdo ("eso, ...", "tal cual, ..."), acompaña
+       al padre aunque sea larga: la fórmula afirma lo que dice el padre.
+    2. Si su texto normalizado también aparece como raíz con una postura clara
+       (>= MIN_USOS_TEXTO_RAIZ usos y >= FRACCION_TEXTO_RAIZ de una sola postura),
+       vale esa postura: una copia exacta afirma lo mismo como respuesta que como
+       raíz, aunque le responda a alguien del otro bando.
+    3. Si es corta, acompaña al padre.
+    4. Si no, contradice al padre.
     """
     padre_de = {i: p for i, p in zip(ids, padres) if p is not None and p == p}
     texto_de = dict(zip(ids, textos))
     postura = dict(postura_raiz)
+
+    # Postura de cada texto cuando aparece como raíz (las raíces ya tienen bando)
+    votos_raiz = defaultdict(Counter)
+    for c, p in postura_raiz.items():
+        votos_raiz[tx.para_comparar(texto_de.get(c, ""))][p] += 1
+
+    def postura_del_texto(norm, palabras):
+        if palabras < MIN_PALABRAS_TEXTO_RAIZ:
+            return ""
+        v = votos_raiz.get(norm)
+        if not v or sum(v.values()) < MIN_USOS_TEXTO_RAIZ:
+            return ""
+        p, k = v.most_common(1)[0]
+        return p if k / sum(v.values()) >= FRACCION_TEXTO_RAIZ else ""
 
     def resolver(c, profundidad=0):
         if c in postura:
@@ -71,7 +114,17 @@ def posturas_por_hilo(ids, padres, textos, postura_raiz):
         if not pp:
             postura[c] = ""
         else:
-            postura[c] = pp if es_corta(texto_de.get(c, "")) else OPUESTA[pp]
+            norm = tx.para_comparar(texto_de.get(c, ""))
+            palabras = len(norm.split())
+            propia = postura_del_texto(norm, palabras)
+            if _ACUERDO.search(norm):
+                postura[c] = pp
+            elif propia:
+                postura[c] = propia
+            elif palabras <= PALABRAS_RESPUESTA_CORTA:
+                postura[c] = pp
+            else:
+                postura[c] = OPUESTA[pp]
         return postura[c]
 
     for c in ids:

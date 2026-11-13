@@ -17,6 +17,15 @@ Corrida desde cero (sin cache), con los embeddings en la GPU integrada de la Mac
 | Postura | 0,8 | 2 bandos por narrativa + regla de polaridad (lee la caché de IA) |
 | **Total** | **108** | Solo con CPU tarda más: los embeddings son la etapa que más se alarga |
 
+Medido el 13/11 en frío en una MacBook Air, **todo en CPU** (set de práctica, 200.000 comentarios):
+datos 1 s, embeddings 115 s, UMAP 133 s, votos y rescate 26 s, ruido por vecinos 7 s, coordinación
+11 s, postura y salida 5 s — **297 s en total**. En CPU el cuello se reparte entre embeddings y
+UMAP; con GPU (MPS), UMAP solo. Dos verificaciones útiles: **HDBSCAN tarda 1,5 s** (no es el
+cuello) y **UMAP no admite paralelizar con semilla fija** (la librería avisa `n_jobs overridden
+to 1 by setting random_state`): bajarle iteraciones o precalcular vecinos cambia el agrupamiento,
+ya se probó y se revirtió (ver `reportes/mejoras.md`). Los únicos atajos que quedan cambian los
+resultados o la reproducibilidad.
+
 - **IA:** con el gateway son **6 llamadas por narrativa** (3 modelos × 2 órdenes de los bandos). En
   el set final: 72 respuestas, 117.915 tokens y **US$ 0,187 a precio de lista**, o sea
   **US$ 0,0012 por cada 1.000 comentarios** y unos US$ 0,016 por narrativa. El costo **no crece con
