@@ -1,17 +1,17 @@
 {
   "comentarios_procesados": 150000,
-  "segundos": 107.82,
+  "segundos": 114.22,
   "tokens_ia": 0,
   "usd_ia": 0.0,
   "usd_por_mil_comentarios": 0.0,
   "hardware": "Apple M5, 10 núcleos, 16 GB RAM; embeddings en la GPU integrada de la Mac (MPS)",
   "almacenamiento": "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)",
-  "notas": "embeddings locales (intfloat/multilingual-e5-small); narrativas: micro-grupos (UMAP+HDBSCAN) + votos de hilos + Leiden; ruido: clasificador entrenado en práctica; IA: no se usó (sin clave ni caché); qué bando apoya lo decide el bando más grande; coordinación: copias + llegadas juntas + respuestas + comunidades densas (Leiden) + hashtag propio, sin IA",
+  "notas": "embeddings locales (intfloat/multilingual-e5-small); narrativas: micro-grupos (UMAP+HDBSCAN) + votos de hilos + Leiden; ruido: participación en hilos de los comentarios más parecidos (clasificador entrenado solo de respaldo); IA: no se usó (sin clave ni caché); qué bando apoya lo decide el bando más grande; coordinación: copias + llegadas juntas + respuestas + comunidades densas (Leiden) + hashtag propio + llegadas en momentos tranquilos, sin IA",
   "segundos_por_etapa": {
-    "datos": 0.52,
-    "embeddings": 39.62,
-    "narrativas": 63.04,
-    "postura": 0.6,
-    "coordinacion": 3.85
+    "datos": 0.59,
+    "embeddings": 35.31,
+    "narrativas": 71.81,
+    "postura": 0.68,
+    "coordinacion": 5.61
   }
 }
