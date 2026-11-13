@@ -104,10 +104,6 @@ filtro de par único más la capa H de tanda de creación (54,63) y el filtro de
 nunca vio, con solo 10 días, con otras semillas y con datos ensuciados a propósito. Agrupamiento y
 ruido se sostienen en los 9 experimentos; la postura sin IA es la parte frágil.
 
-## Video de demo
-
-[`reportes/demo.mp4`](reportes/demo.mp4): 72 segundos, sin audio. Recorre el tablero del set final y resume cómo funciona y cuánto saca.
-
 ## Dashboard
 
 El pipeline genera solo [`reportes/dashboard.html`](reportes/dashboard.html): un archivo, sin internet

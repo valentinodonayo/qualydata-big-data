@@ -82,4 +82,4 @@ Baja el set final, instala las versiones exactas y escribe `entrega/` y el table
 
 ## Video de demo
 
-`reportes/demo.mp4` (82 segundos, sin audio), en el repo: https://github.com/valentinodonayo/qualydata-big-data/raw/main/reportes/demo.mp4
+El video (82 segundos, sin audio) se sube como archivo en el campo de video de Hacki.
