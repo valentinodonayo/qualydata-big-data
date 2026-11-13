@@ -33,7 +33,7 @@ Otros comandos:
 | Comando | Qué hace |
 |---|---|
 | `make practica` | Corre sobre el set de práctica y lo puntúa con el script oficial del jurado |
-| `make test` | Corre los 43 tests |
+| `make test` | Corre los 45 tests |
 | `make limpiar` | Borra la cache (embeddings, UMAP, base). La próxima corrida recalcula todo |
 
 **IA opcional y reproducible.** Para cada narrativa, la IA ayuda a decidir cuál de los dos bandos
@@ -71,8 +71,8 @@ Set de práctica, con el script oficial del jurado (`evaluacion/puntuar.py`):
 | Corrida | Narrativas /30 | Coordinación /25 | Total automático /55 |
 |---|---|---|---|
 | Línea base oficial | 12,83 | 4,12 | 16,95 |
-| Este pipeline, sin IA (`--sin-ia`) | 29,23 | 23,99 | 53,22 |
-| **Este pipeline, con IA** (como la entrega) | **29,99** | **23,99** | **53,98** |
+| Este pipeline, sin IA (`--sin-ia`) | 29,23 | 24,64 | 53,87 |
+| **Este pipeline, con IA** (como la entrega) | **29,99** | **24,64** | **54,63** |
 
 Detalle en práctica:
 
@@ -82,11 +82,12 @@ Detalle en práctica:
 | Ruido (F1) | 1,000 |
 | Origen de las 3 narrativas emergentes | 1,000 (las 3 dentro de las 3 horas) |
 | Postura (macro-F1) | 0,998 con IA · 0,872 sin IA |
-| Cuentas coordinadas (F1) | 0,965 (precisión 0,982, cobertura 0,948) |
-| Operaciones (B-cubed F1) | 0,948 |
+| Cuentas coordinadas (F1) | 0,987 (precisión 0,991, cobertura 0,983: 113 de las 115 cuentas de campaña, 1 genuina marcada) |
+| Operaciones (B-cubed F1) | 0,983 |
 
 Evolución: ayer el pipeline sacaba 51,98. Hoy sumaron la capa G de coordinación (52,99), el ruido
-por vecinos en hilos (53,22) y la IA con votación (53,98). Historial de cada prueba en
+por vecinos en hilos (53,22), la IA con votación (53,98), la segunda pasada de la capa G (54,27) y el
+filtro de par único más la capa H de tanda de creación (54,63). Historial de cada prueba en
 [`experimentos/runs.csv`](experimentos/runs.csv).
 
 **Set final** (`entrega/`, 150.000 comentarios, sin respuesta correcta):
@@ -95,8 +96,8 @@ por vecinos en hilos (53,22) y la IA con votación (53,98). Historial de cada pr
 |---|---|
 | Narrativas | 12 (3 nacen con el período empezado: licitación arreglada del dique y cierre de la comisaría el 9/10, grilla del festival el 12/10) |
 | Ruido | 20,7% de los comentarios |
-| Operaciones coordinadas | 3, con 90 cuentas (47 / 24 / 19) |
-| Tiempo desde cero | 113 s |
+| Operaciones coordinadas | 3, con 98 cuentas (50 / 26 / 22) |
+| Tiempo desde cero | 108 s |
 | IA | 72 respuestas, 117.915 tokens, US$ 0,187 a precio de lista |
 
 **¿Generaliza?** Ver [`docs/generalizacion.md`](docs/generalizacion.md): con un tema que el pipeline
@@ -159,9 +160,16 @@ CSV.gz ──► DuckDB + Parquet ──► embeddings locales ──► narrati
    - **Llegadas raras** (capa G, nueva): suma la cuenta que llega a las mismas publicaciones que los
      miembros de una operación en momentos tranquilos. Cada coincidencia en una franja de 15 min
      pesa 1/(cuentas presentes − 1): con poca gente pesa mucho, en un momento viral casi nada.
-     Umbrales: puntaje ≥ 1,4, densidad ≥ 0,03 por publicación de la cuenta y ≥ 3 publicaciones
-     distintas en común. En práctica recuperó 6 de las 9 cuentas de la campaña "de cobertura" que se
-     escapaban.
+     Umbrales: puntaje ≥ 1,4, densidad ≥ 0,03 por publicación de la cuenta y ≥ 2 publicaciones
+     distintas en común. Se repite hasta 3 pasadas, porque una cuenta recién sumada puede delatar a
+     otra. En práctica recuperó 7 de las 9 cuentas de la campaña "de cobertura" que se escapaban.
+   - **Filtro de par único**: una cuenta que entra por un solo par fuerte, y ese par es menos del
+     10% de su propia actividad, se suelta. Saca a las genuinas muy activas que coinciden por volumen.
+   - **Tanda de creación** (capa H, nueva): usa la metadata de las cuentas. Si casi todos los
+     miembros de una operación se crearon en una ventana de ≤ 10 días y ≥ 80% comparte la forma del
+     usuario (por ejemplo palabra + 4 dígitos), se suma la cuenta no marcada creada en esa ventana
+     (±1 día) con esa misma forma. Nada de fechas ni nombres escritos a mano: todo es relativo a cada
+     operación ya detectada. En el set final sumó 4 cuentas.
 7. **Postura** ([`postura.py`](pipeline/postura.py), [`ia.py`](pipeline/ia.py)): dentro de cada
    narrativa, las respuestas largas contradicen a su padre, así que parten los micro-grupos en 2
    bandos (corte máximo). Las respuestas cortas ("Tal cual") heredan la postura del padre. Falta
@@ -187,7 +195,7 @@ Números del set final, tomados de [`entrega/costo.json`](entrega/costo.json):
 
 | Concepto | Valor |
 |---|---|
-| Tiempo desde cero | **113 s** en una notebook Apple M5 (embeddings en la GPU integrada) |
+| Tiempo desde cero | **108 s** en una notebook Apple M5 (embeddings en la GPU integrada) |
 | IA, la corrida que llenó la caché | 72 respuestas, 117.915 tokens, **US$ 0,187** a precio de lista |
 | IA por cada 1.000 comentarios | US$ 0,0012 |
 | IA en cada re-corrida | **US$ 0** (lee la caché) |
@@ -224,7 +232,7 @@ evidencia de cada una: [`docs/decisiones.md`](docs/decisiones.md).
   cuentas sin metadata. Todo queda contado en `cache/reportes/calidad.json`.
 - **Nunca se queda sin entrega:** si una etapa falla, se anota en `cache/reportes/log.txt`, se sigue
   con las demás y al final se valida el formato de los 4 archivos (`pipeline/validar.py`).
-- **Tests:** `make test` corre 43 tests, incluida una prueba de punta a punta sobre una muestra
+- **Tests:** `make test` corre 45 tests, incluida una prueba de punta a punta sobre una muestra
   ensuciada, casos trampa de coordinación (momento viral y frase copiada sin coordinación), el ruido
   por vecinos y la votación de la IA (sin llamar a ningún modelo).
 
@@ -246,8 +254,9 @@ Google Gemini (sin SDK) y el SDK de Anthropic.
   orden y no votan. Ahí decide el tamaño, que con bandos parejos es una señal débil. Sin IA es peor:
   en narrativas con 49,5% a 50,5% de apoyo, "el bando más grande" es una moneda al aire (postura
   macro-F1 0,872 sin IA contra 0,998 con IA en práctica).
-- **Coordinación: cobertura 0,948 en práctica.** Se escapan cuentas de campañas "de cobertura"
-  (textos variados) con poca actividad: no juntan suficientes coincidencias con la operación.
+- **Coordinación: quedan 2 cuentas sin marcar y 1 genuina marcada en práctica.** Las 2 son de la
+  campaña "de cobertura" (cuentas viejas, textos variados) y coinciden con la operación tan poco como
+  una cuenta genuina; no encontramos una señal que las recupere sin marcar genuinas.
 - **Reconocimiento "difuso" de la caché de IA.** Si en otra máquina los grupos cambian un poco, la
   caché reconoce cada narrativa por los ejemplos en común (pide al menos 8 entre los dos bandos). Si
   cambian mucho, no la reconoce y esa narrativa se decide sin votos de IA (operación y tamaño).

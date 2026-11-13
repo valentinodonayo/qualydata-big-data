@@ -4,8 +4,8 @@ Cada decisión se tomó midiendo con el script oficial del jurado sobre el set d
 (historial completo en `experimentos/runs.csv`). Puntajes sobre 55 automáticos.
 
 La tabla está en orden cronológico: las filas 1 a 14 son del 11 y 12/11 y sus números son los de ese
-momento (el pipeline llegó a 51,98). Las filas 15 a 20 son del 13/11 y lo llevaron a **53,22 sin IA y
-53,98 con IA**. Donde una decisión vieja fue reemplazada, la fila lo dice.
+momento (el pipeline llegó a 51,98). Las filas 15 a 20 son del 13/11 y lo llevaron a **53,87 sin IA y
+54,63 con IA**. Donde una decisión vieja fue reemplazada, la fila lo dice.
 
 | # | Decisión | Alternativa | Evidencia |
 |---|---|---|---|

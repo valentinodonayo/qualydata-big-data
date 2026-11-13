@@ -11,11 +11,11 @@ Corrida desde cero (sin cache), con los embeddings en la GPU integrada de la Mac
 | Etapa | Segundos | Qué hace |
 |---|---|---|
 | Datos | 0,5 | Leer CSV.gz, limpiar, guardar DuckDB + Parquet |
-| Embeddings | 39,0 | Solo los textos distintos (alrededor de un tercio de los comentarios) |
-| Narrativas | 68,0 | UMAP + HDBSCAN + votos de hilos + Leiden + ruido por vecinos |
-| Coordinación | 4,5 | Pares de cuentas + red de respuestas + hashtag propio + llegadas raras |
+| Embeddings | 38,4 | Solo los textos distintos (alrededor de un tercio de los comentarios) |
+| Narrativas | 62,6 | UMAP + HDBSCAN + votos de hilos + Leiden + ruido por vecinos |
+| Coordinación | 5,3 | Pares de cuentas + red de respuestas + hashtag propio + llegadas raras + tanda de creación |
 | Postura | 0,8 | 2 bandos por narrativa + regla de polaridad (lee la caché de IA) |
-| **Total** | **113** | Solo con CPU tarda más: los embeddings son la etapa que más se alarga |
+| **Total** | **108** | Solo con CPU tarda más: los embeddings son la etapa que más se alarga |
 
 - **IA:** con el gateway son **6 llamadas por narrativa** (3 modelos × 2 órdenes de los bandos). En
   el set final: 72 respuestas, 117.915 tokens y **US$ 0,187 a precio de lista**, o sea
@@ -24,7 +24,7 @@ Corrida desde cero (sin cache), con los embeddings en la GPU integrada de la Mac
   **US$ 0**, porque lee las respuestas de la caché versionada (`modelos/cache_ia.json`). El precio
   por token de cada modelo está en `pipeline/ia.py`; la cuenta usada está en la capa gratis, así que
   `usd_ia` es lo que costaría pagarlo.
-- **Cómputo:** ≈0,75 ms por comentario (113 s para 150.000). Con una VM de 8 a 10 núcleos
+- **Cómputo:** ≈0,72 ms por comentario (108 s para 150.000). Con una VM de 8 a 10 núcleos
   a US$ 0,30 por hora (**supuesto**, precio típico on-demand), son ≈1 s por cada 1.000 comentarios,
   o sea **≈US$ 0,0001 por cada 1.000 comentarios**.
 - **Almacenamiento:** el set de práctica (200.000 comentarios) pesa 4,6 MB en CSV.gz, 14 MB como
