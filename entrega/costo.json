@@ -1,6 +1,6 @@
 {
   "comentarios_procesados": 150000,
-  "segundos": 107.95,
+  "segundos": 107.79,
   "tokens_ia": 117915,
   "usd_ia": 0.186766,
   "usd_por_mil_comentarios": 0.001245,
@@ -8,10 +8,10 @@
   "almacenamiento": "DuckDB local (cache/qualydata.duckdb) + copia en Parquet (cache/parquet/)",
   "notas": "embeddings locales (intfloat/multilingual-e5-small); narrativas: micro-grupos (UMAP+HDBSCAN) + votos de hilos + Leiden; ruido: participación en hilos de los comentarios más parecidos (clasificador entrenado solo de respaldo); IA (openai/gpt-5-mini + openai/gpt-4.1 + google/gemini-2.5-flash) 6 llamadas (cada modelo 2 veces, con los bandos en un orden y en el otro; costo a precio de lista) por narrativa para decidir qué bando apoya y titularla (72 respuestas leídas de la caché versionada modelos/cache_ia.json; tokens y USD = los de la corrida que las generó); coordinación: copias + llegadas juntas + respuestas + comunidades densas (Leiden) + hashtag propio + llegadas en momentos tranquilos, sin IA",
   "segundos_por_etapa": {
-    "datos": 0.54,
-    "embeddings": 38.93,
-    "narrativas": 62.4,
-    "coordinacion": 5.09,
-    "postura": 0.8
+    "datos": 0.52,
+    "embeddings": 38.38,
+    "narrativas": 62.59,
+    "coordinacion": 5.34,
+    "postura": 0.77
   }
 }
