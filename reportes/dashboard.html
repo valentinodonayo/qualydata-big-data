@@ -341,8 +341,8 @@ footer { margin-top: 40px; color: var(--tinta-3); font-size: 13px; }
 
   const k = D.costo || {};
   document.getElementById("pie").textContent =
-    `Procesado en ${k.segundos != null ? Math.round(k.segundos) + " s" : "—"} · US$ ${k.usd_ia ?? 0} en IA ` +
-    `(US$ ${k.usd_por_mil_comentarios ?? 0} por cada mil comentarios) · ${k.hardware || ""}. ` +
+    `Procesado en ${k.segundos != null ? Math.round(k.segundos) + " s" : "—"} · US$ ${Number(k.usd_ia ?? 0).toFixed(2).replace(".", ",")} en IA a precio de lista ` +
+    `(US$ ${Number(k.usd_por_mil_comentarios ?? 0).toFixed(4).replace(".", ",")} por cada mil comentarios; US$ 0 al re-correr con la caché) · ${k.hardware || ""}. ` +
     `Generado automáticamente por el pipeline; nada se etiquetó a mano. Datos sintéticos.`;
 })();
 </script>

@@ -77,4 +77,5 @@ Baja el set final, instala las versiones exactas y escribe `entrega/` y el table
 
 ## Video de demo
 
-`demo.mp4` (unos 70 segundos), adjunto al release del repositorio.
+`reportes/demo.mp4` (72 segundos, sin audio). Enlace directo una vez pusheado:
+https://github.com/valentinodonayo/qualydata-big-data/raw/main/reportes/demo.mp4

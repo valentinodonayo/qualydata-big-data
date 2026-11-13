@@ -104,6 +104,10 @@ filtro de par único más la capa H de tanda de creación (54,63). Historial de 
 nunca vio, con solo 10 días, con otras semillas y con datos ensuciados a propósito. Agrupamiento y
 ruido se sostienen en los 9 experimentos; la postura sin IA es la parte frágil.
 
+## Video de demo
+
+[`reportes/demo.mp4`](reportes/demo.mp4): 72 segundos, sin audio. Recorre el tablero del set final y resume cómo funciona y cuánto saca.
+
 ## Dashboard
 
 El pipeline genera solo [`reportes/dashboard.html`](reportes/dashboard.html): un archivo, sin internet
@@ -227,6 +231,10 @@ evidencia de cada una: [`docs/decisiones.md`](docs/decisiones.md).
 - **Otra máquina:** si no hay GPU de Mac, usa CPU (más lento). Se puede forzar con
   `QUALY_DISPOSITIVO=cpu`. Los embeddings pueden cambiar en los últimos decimales; si por eso cambia
   algún ejemplo, la caché reconoce cada narrativa por los ejemplos en común (ver "Límites conocidos").
+  **Verificado el 13/11 con un clon limpio, solo CPU y sin ninguna clave** (`make entrega`): termina en
+  222 s, `narrativas.csv` y `cuentas.csv` salen idénticos byte a byte, y en `comentarios.csv` el 99,94%
+  de los comentarios queda en la misma narrativa y el 99,99% con la misma postura. Las 72 respuestas
+  de la IA salieron de la caché.
 - **Datos sucios:** columnas desordenadas o faltantes, columnas extra, filas rotas, ids repetidos,
   fechas inválidas o con otra zona horaria, textos vacíos, respuestas a comentarios que no existen y
   cuentas sin metadata. Todo queda contado en `cache/reportes/calidad.json`.
